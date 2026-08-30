@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const products = require("./data/products");
-const { searchProducts } = require("./tools/productTools");
+const { searchProducts, getProductDetails } = require("./tools/productTools");
 
 const app = express();
 
@@ -34,6 +34,29 @@ const tools = [
         },
 
         required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+
+    function: {
+      name: "getProductDetails",
+
+      description:
+        "Get detailed information about a specific product using its product ID.",
+
+      parameters: {
+        type: "object",
+
+        properties: {
+          productId: {
+            type: "string",
+            description: "The ID of the product to get details for.",
+          },
+        },
+
+        required: ["productId"],
       },
     },
   },
@@ -103,6 +126,8 @@ app.post("/api/chat", async (req, res) => {
 
       if (toolName === "searchProducts") {
         toolResult = searchProducts(toolArguments);
+      } else if (toolName === "getProductDetails") {
+        toolResult = getProductDetails(toolArguments);
       } else {
         throw new Error(`Unknown tool: ${toolName}`);
       }

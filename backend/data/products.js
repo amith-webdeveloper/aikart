@@ -6,8 +6,18 @@ const products = [
     price: 55000,
     description: "16GB RAM, 512GB SSD, Ryzen 7 processor",
     stock: 10,
-  },
 
+    brand: "ProBook",
+
+    specifications: {
+      processor: "AMD Ryzen 7",
+      ram: "16GB",
+      storage: "512GB SSD",
+      display: "15.6-inch Full HD",
+    },
+
+    rating: 4.5,
+  },
   {
     id: "lap002",
     name: "UltraBook Y",
@@ -15,6 +25,17 @@ const products = [
     price: 58000,
     description: "16GB RAM, 1TB SSD, Intel Core i5 processor",
     stock: 8,
+
+    brand: "UltraBook",
+
+    specifications: {
+      processor: "Intel Core i5",
+      ram: "16GB",
+      storage: "1TB SSD",
+      display: "14-inch Full HD",
+    },
+
+    rating: 4.3,
   },
 
   {
@@ -24,6 +45,17 @@ const products = [
     price: 49000,
     description: "16GB RAM, 512GB SSD, Ryzen 5 processor",
     stock: 15,
+
+    brand: "DevBook",
+
+    specifications: {
+      processor: "AMD Ryzen 5",
+      ram: "16GB",
+      storage: "512GB SSD",
+      display: "15.6-inch Full HD",
+    },
+
+    rating: 4.2,
   },
 
   {
