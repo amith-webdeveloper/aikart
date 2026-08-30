@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const products = require("./data/products");
-const { searchProducts, getProductDetails, addToCart, getCart, } = require("./tools/productTools");
+const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, } = require("./tools/productTools");
 
 const app = express();
 
@@ -103,6 +103,29 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+
+    function: {
+      name: "removeFromCart",
+
+      description:
+        "Remove a specific product from the customer's shopping cart. Use this only when the customer explicitly asks to remove the product.",
+
+      parameters: {
+        type: "object",
+
+        properties: {
+          productId: {
+            type: "string",
+            description: "The ID of the product to remove from the cart.",
+          },
+        },
+
+        required: ["productId"],
+      },
+    },
+  },
 ];
 
 app.get("/api/products", (req, res) => {
@@ -167,6 +190,8 @@ app.post("/api/chat", async (req, res) => {
       console.log("Tool arguments:", toolArguments);
       let toolResult;
 
+      
+
       if (toolName === "searchProducts") {
         toolResult = searchProducts(toolArguments);
       } else if (toolName === "getProductDetails") {
@@ -175,9 +200,13 @@ app.post("/api/chat", async (req, res) => {
         toolResult = addToCart(toolArguments);
       } else if (toolName === "getCart") {
         toolResult = getCart();
+      } else if (toolName === "removeFromCart") {
+        toolResult = removeFromCart(toolArguments);
       } else {
         throw new Error(`Unknown tool: ${toolName}`);
       }
+
+
       console.log("Tool result:");
       console.log(toolResult);
 
