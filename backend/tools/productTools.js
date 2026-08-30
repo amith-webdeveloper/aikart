@@ -88,12 +88,25 @@ function addToCart({ productId, quantity = 1 }) {
   };
 }
 
+function getCart() {
+  return cart.map((item) => {
+    const product = products.find(
+      (product) => product.id === item.productId
+    );
+
+    return {
+      productId: item.productId,
+      name: product?.name || "Unknown product",
+      price: product?.price || 0,
+      quantity: item.quantity,
+      subtotal: (product?.price || 0) * item.quantity,
+    };
+  });
+}
+
 module.exports = {
   searchProducts,
   getProductDetails,
   addToCart,
+  getCart,
 };
-
-
-
-

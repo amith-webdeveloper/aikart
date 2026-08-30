@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const products = require("./data/products");
-const { searchProducts, getProductDetails, addToCart, } = require("./tools/productTools");
+const { searchProducts, getProductDetails, addToCart, getCart, } = require("./tools/productTools");
 
 const app = express();
 
@@ -88,6 +88,21 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+
+    function: {
+      name: "getCart",
+
+      description:
+        "Get the current contents of the customer's shopping cart, including quantities and subtotals.",
+
+      parameters: {
+        type: "object",
+        properties: {},
+      },
+    },
+  },
 ];
 
 app.get("/api/products", (req, res) => {
@@ -158,6 +173,8 @@ app.post("/api/chat", async (req, res) => {
         toolResult = getProductDetails(toolArguments);
       } else if (toolName === "addToCart") {
         toolResult = addToCart(toolArguments);
+      } else if (toolName === "getCart") {
+        toolResult = getCart();
       } else {
         throw new Error(`Unknown tool: ${toolName}`);
       }
