@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const products = require("./data/products");
-const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, } = require("./tools/productTools");
+const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, resolveProduct } = require("./tools/productTools");
 
 const app = express();
 
@@ -44,19 +44,26 @@ const tools = [
       name: "getProductDetails",
 
       description:
-        "Get detailed information about a specific product using its product ID.",
+        "Get detailed information about a specific product. The customer can refer to the product by its name.",
 
       parameters: {
         type: "object",
 
         properties: {
+          productName: {
+            type: "string",
+            description:
+              "The product name as mentioned by the customer.",
+          },
+
           productId: {
             type: "string",
-            description: "The ID of the product to get details for.",
+            description:
+              "Internal product ID if already known.",
           },
         },
 
-        required: ["productId"],
+        required: [],
       },
     },
   },
@@ -67,24 +74,32 @@ const tools = [
       name: "addToCart",
 
       description:
-        "Add a product to the customer's shopping cart. Use this only when the customer explicitly asks to add a product to their cart.",
+        "Add a product to the customer's cart. Use this only when the customer explicitly asks to add a product.",
 
       parameters: {
         type: "object",
 
         properties: {
+          productName: {
+            type: "string",
+            description:
+              "The product name mentioned by the customer.",
+          },
+
           productId: {
             type: "string",
-            description: "The ID of the product to add.",
+            description:
+              "Internal product ID if already known.",
           },
 
           quantity: {
             type: "number",
-            description: "The number of units the customer wants to add.",
+            description:
+              "The number of units the customer wants to add.",
           },
         },
 
-        required: ["productId"],
+        required: [],
       },
     },
   },
@@ -126,6 +141,30 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+
+    function: {
+      name: "resolveProduct",
+
+      description:
+        "Internal lookup tool. Resolve a customer-provided product name to the correct catalog product ID. This is NOT a final customer-facing action. After successful resolution, continue using another tool to fulfill the customer's original request.",
+
+      parameters: {
+        type: "object",
+
+        properties: {
+          productName: {
+            type: "string",
+            description:
+              "The product name as mentioned by the customer, including possible spelling mistakes.",
+          },
+        },
+
+        required: ["productName"],
+      },
+    },
+  },
 ];
 
 app.get("/api/products", (req, res) => {
@@ -137,86 +176,35 @@ app.post("/api/chat", async (req, res) => {
 
   console.log("User:", userMessage);
 
+  const messages = [
+    {
+      role: "system",
+      content: `
+You are AIKart, an AI shopping assistant for an Indian merchant.
+
+Rules:
+- All prices are in Indian Rupees (INR/₹).
+- Never refer to prices as Yuan, RMB, or USD.
+- Never invent products or product information.
+- Product IDs are internal and must never be shown to the customer.
+- Product matching confidence is internal and must never be shown to the customer.
+- When a customer asks about a product by name, use resolveProduct when the product ID is not known.
+- resolveProduct is an internal lookup step. After successfully resolving a product, continue with the tool needed to fulfill the customer's original request.
+- If the customer asks for product details, resolve the product first if necessary, then use getProductDetails.
+- If the customer asks to add a product to the cart, resolve the product first if necessary, then use addToCart.
+- Do not ask the customer to provide an internal product ID when they have provided a product name.
+`,
+    },
+    {
+      role: "user",
+      content: userMessage,
+    },
+  ];
+
   try {
-    const response = await fetch(
-      "http://localhost:11434/v1/chat/completions",
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type": "application/json",
-        },
-
-        body: JSON.stringify({
-          model: "qwen2.5:3b-instruct",
-
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are AIKart, an AI shopping assistant for an Indian merchant. All product prices are in Indian Rupees (INR/₹). Never refer to prices as Yuan, RMB, or USD.",
-            },
-            {
-              role: "user",
-              content: userMessage,
-            },
-          ],
-          tools,
-
-          stream: false,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Ollama returned ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    const message = data.choices[0].message;
-
-    console.log("Qwen response:");
-    console.dir(message, { depth: null });
-
-
-    if (message.tool_calls?.length > 0) {
-      const toolCall = message.tool_calls[0];
-      const toolName = toolCall.function.name;
-      console.log("Tool requested:", toolName);
-      const toolArguments = JSON.parse(
-        toolCall.function.arguments
-      );
-      console.log("Tool arguments:", toolArguments);
-      let toolResult;
-
-      
-
-      if (toolName === "searchProducts") {
-        toolResult = searchProducts(toolArguments);
-      } else if (toolName === "getProductDetails") {
-        toolResult = getProductDetails(toolArguments);
-      } else if (toolName === "addToCart") {
-        toolResult = addToCart(toolArguments);
-      } else if (toolName === "getCart") {
-        toolResult = getCart();
-      } else if (toolName === "removeFromCart") {
-        toolResult = removeFromCart(toolArguments);
-      } else {
-        throw new Error(`Unknown tool: ${toolName}`);
-      }
-
-
-      console.log("Tool result:");
-      console.log(toolResult);
-
-      const toolMessage = {
-        role: "tool",
-        tool_call_id: toolCall.id,
-        content: JSON.stringify(toolResult),
-      };
-
-      const secondResponse = await fetch(
+    // Agent loop
+    while (true) {
+      const response = await fetch(
         "http://localhost:11434/v1/chat/completions",
         {
           method: "POST",
@@ -227,56 +215,132 @@ app.post("/api/chat", async (req, res) => {
 
           body: JSON.stringify({
             model: "qwen2.5:3b-instruct",
-
-            messages: [
-              {
-                role: "system",
-                content:
-                  "You are AIKart, an AI shopping assistant for an Indian merchant. All product prices are in Indian Rupees (INR/₹). Never refer to prices as Yuan, RMB, or USD.",
-              },
-              {
-                role: "user",
-                content: userMessage,
-              },
-
-              {
-                role: "assistant",
-                tool_calls: message.tool_calls,
-              },
-
-              toolMessage,
-            ],
-
+            messages,
+            tools,
             stream: false,
           }),
         }
       );
 
-      const secondData = await secondResponse.json();
+      if (!response.ok) {
+        throw new Error(
+          `Ollama returned ${response.status}`
+        );
+      }
 
-      const finalMessage =
-        secondData.choices[0].message.content;
+      const data = await response.json();
 
-      console.log("Final AI response:");
-      console.log(finalMessage);
+      const assistantMessage =
+        data.choices[0].message;
 
-      res.json({
-        message: finalMessage,
-      });
+      console.log("Qwen response:");
+      console.dir(assistantMessage, { depth: null });
 
-      return;
+      // Add Qwen's response to conversation
+      messages.push(assistantMessage);
 
+      // NO MORE TOOLS → FINAL ANSWER
+
+      if (!assistantMessage.tool_calls?.length) {
+        console.log("Final AI response:");
+        console.log(assistantMessage.content);
+
+        return res.json({
+          message: assistantMessage.content,
+        });
+      }
+
+      // EXECUTE TOOL CALLS
+
+      for (const toolCall of assistantMessage.tool_calls) {
+        const toolName =
+          toolCall.function.name;
+
+        const toolArguments = JSON.parse(
+          toolCall.function.arguments
+        );
+
+        console.log(
+          "Tool requested:",
+          toolName
+        );
+
+        console.log(
+          "Tool arguments:",
+          toolArguments
+        );
+
+        let toolResult;
+
+        if (toolName === "searchProducts") {
+          toolResult =
+            searchProducts(toolArguments);
+
+        } else if (toolName === "getProductDetails") {
+          toolResult =
+            getProductDetails(toolArguments);
+
+        } else if (toolName === "addToCart") {
+          toolResult =
+            addToCart(toolArguments);
+
+        } else if (toolName === "getCart") {
+          toolResult = getCart();
+
+        } else if (toolName === "removeFromCart") {
+          toolResult =
+            removeFromCart(toolArguments);
+
+        }
+        else if (toolName === "resolveProduct") {
+          toolResult =
+            resolveProduct(toolArguments);
+
+        } 
+        else {
+          throw new Error(
+            `Unknown tool: ${toolName}`
+          );
+        }
+
+        console.log("Tool result:");
+        console.dir(toolResult, { depth: null });
+
+        // Give tool result back to Qwen
+        let toolContent = toolResult;
+
+        if (toolName === "resolveProduct") {
+          toolContent = {
+            ...toolResult,
+            instruction:
+              "This is an internal product resolution result. Do not show the product ID or internal resolution details to the customer. Continue with the tool required to fulfill the customer's original request.",
+          };
+        }
+
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(toolContent),
+        });
+      }
+
+      // Loop continues.
+      // Qwen gets the tool result and decides
+      // whether another tool is needed or
+      // whether it can give the final answer.
     }
-    res.json({
-      message: message.content
-    });
 
   } catch (error) {
-    console.error("LLM request failed:", error);
+    console.error(
+      "LLM request failed:",
+      error
+    );
 
-    res.status(500).json({
-      error: "Failed to get response from AI",
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Failed to get response from AI",
+      });
+    }
   }
 });
 

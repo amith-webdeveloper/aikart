@@ -16,24 +16,54 @@ function searchProducts({ category, maxPrice }) {
   return results;
 }
 
-function getProductDetails({ productId }) {
-  const product = products.find(
-    (product) => product.id === productId
-  );
+function getProductDetails({ productName, productId }) {
+  let product;
+
+  if (productId) {
+    product = products.find(
+      (product) => product.id === productId
+    );
+  } else if (productName) {
+    const resolved = resolveProduct(productName);
+
+    if (!resolved.success) {
+      return resolved;
+    }
+
+    product = products.find(
+      (product) => product.id === resolved.productId
+    );
+  }
 
   if (!product) {
     return {
+      success: false,
       error: "Product not found",
     };
   }
 
-  return product;
+  return {
+    success: true,
+    product,
+  };
 }
 
-function addToCart({ productId, quantity = 1 }) {
-  const product = products.find(
-    (product) => product.id === productId
-  );
+function addToCart({ productName, productId, quantity = 1 }) {
+  let product;
+
+  if (productId) {
+    product = products.find(
+      (product) => product.id === productId
+    );
+  } else if (productName) {
+    const resolved = resolveProduct(productName);
+
+    if (!resolved.success) {
+      return resolved;
+    }
+
+    product = resolved.product;
+  }
 
   if (!product) {
     return {
@@ -57,7 +87,7 @@ function addToCart({ productId, quantity = 1 }) {
   }
 
   const existingItem = cart.find(
-    (item) => item.productId === productId
+    (item) => item.productId === product.id
   );
 
   if (existingItem) {
@@ -71,7 +101,7 @@ function addToCart({ productId, quantity = 1 }) {
     existingItem.quantity += quantity;
   } else {
     cart.push({
-      productId,
+      productId: product.id,
       quantity,
     });
   }
@@ -80,7 +110,7 @@ function addToCart({ productId, quantity = 1 }) {
     success: true,
     message: `${product.name} added to cart`,
     item: {
-      productId,
+      productId: product.id,
       name: product.name,
       price: product.price,
       quantity:
@@ -130,7 +160,14 @@ function removeFromCart({ productId }) {
   };
 }
 
-function resolveProduct(productName) {
+function resolveProduct({ productName }) {
+  if (!productName || typeof productName !== "string") {
+    return {
+      success: false,
+      error: "A valid product name is required",
+    };
+  }
+
   const normalizedInput = productName
     .toLowerCase()
     .trim()
@@ -144,30 +181,36 @@ function resolveProduct(productName) {
   if (exactMatch) {
     return {
       success: true,
-      product: exactMatch,
+      productId: exactMatch.id,
+      productName: exactMatch.name,
       confidence: 1,
     };
   }
 
-  const matches = products.map((product) => {
-    const similarity = stringSimilarity.compareTwoStrings(
-      normalizedInput,
-      product.name.toLowerCase()
-    );
+  const matches = products
+    .map((product) => {
+      const similarity = stringSimilarity.compareTwoStrings(
+        normalizedInput,
+        product.name.toLowerCase().trim()
+      );
 
+      return {
+        product,
+        confidence: similarity,
+      };
+    })
+    .sort((a, b) => b.confidence - a.confidence);
+
+  if (matches.length === 0) {
     return {
-      product,
-      confidence: similarity,
+      success: false,
+      error: "No products are available in the catalog",
     };
-  });
-
-  matches.sort(
-    (a, b) => b.confidence - a.confidence
-  );
+  }
 
   const bestMatch = matches[0];
 
-  if (!bestMatch || bestMatch.confidence < 0.6) {
+  if (bestMatch.confidence < 0.6) {
     return {
       success: false,
       error: "No confident product match found",
@@ -176,8 +219,9 @@ function resolveProduct(productName) {
 
   return {
     success: true,
-    product: bestMatch.product,
-    confidence: bestMatch.confidence,
+    productId: bestMatch.product.id,
+    productName: bestMatch.product.name,
+
   };
 }
 
@@ -190,9 +234,3 @@ module.exports = {
   removeFromCart,
   resolveProduct,
 };
-
-
-
-console.log(
-  resolveProduct("ProBook X")
-);
