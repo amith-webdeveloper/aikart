@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const products = require("./data/products");
-const { searchProducts, getProductDetails } = require("./tools/productTools");
+const { searchProducts, getProductDetails, addToCart, } = require("./tools/productTools");
 
 const app = express();
 
@@ -53,6 +53,34 @@ const tools = [
           productId: {
             type: "string",
             description: "The ID of the product to get details for.",
+          },
+        },
+
+        required: ["productId"],
+      },
+    },
+  },
+  {
+    type: "function",
+
+    function: {
+      name: "addToCart",
+
+      description:
+        "Add a product to the customer's shopping cart. Use this only when the customer explicitly asks to add a product to their cart.",
+
+      parameters: {
+        type: "object",
+
+        properties: {
+          productId: {
+            type: "string",
+            description: "The ID of the product to add.",
+          },
+
+          quantity: {
+            type: "number",
+            description: "The number of units the customer wants to add.",
           },
         },
 
@@ -128,6 +156,8 @@ app.post("/api/chat", async (req, res) => {
         toolResult = searchProducts(toolArguments);
       } else if (toolName === "getProductDetails") {
         toolResult = getProductDetails(toolArguments);
+      } else if (toolName === "addToCart") {
+        toolResult = addToCart(toolArguments);
       } else {
         throw new Error(`Unknown tool: ${toolName}`);
       }
