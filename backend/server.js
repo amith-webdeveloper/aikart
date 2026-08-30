@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const products = require("./data/products");
-const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, resolveProduct } = require("./tools/productTools");
+const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, resolveProduct, getProductAttribute } = require("./tools/productTools");
 
 const app = express();
 
@@ -165,6 +165,42 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+
+    function: {
+      name: "getProductAttribute",
+
+      description:
+        "Get one specific product attribute directly from the merchant catalog. Use this when the customer asks about a specific product attribute such as processor, RAM, storage, display, price, stock, rating, brand, touchscreen, GPU, battery, or another attribute. Never guess an attribute that is not returned by this tool.",
+
+      parameters: {
+        type: "object",
+
+        properties: {
+          productName: {
+            type: "string",
+            description:
+              "The product name mentioned by the customer.",
+          },
+
+          productId: {
+            type: "string",
+            description:
+              "Internal product ID if already known.",
+          },
+
+          attribute: {
+            type: "string",
+            description:
+              "The exact product attribute the customer is asking about, such as processor, ram, storage, display, price, stock, rating, brand, or touchscreen.",
+          },
+        },
+
+        required: ["attribute"],
+      },
+    },
+  },
 ];
 
 app.get("/api/products", (req, res) => {
@@ -182,17 +218,42 @@ app.post("/api/chat", async (req, res) => {
       content: `
 You are AIKart, an AI shopping assistant for an Indian merchant.
 
-Rules:
+STRICT CATALOG RULES:
+
 - All prices are in Indian Rupees (INR/₹).
 - Never refer to prices as Yuan, RMB, or USD.
 - Never invent products or product information.
-- Product IDs are internal and must never be shown to the customer.
-- Product matching confidence is internal and must never be shown to the customer.
-- When a customer asks about a product by name, use resolveProduct when the product ID is not known.
-- resolveProduct is an internal lookup step. After successfully resolving a product, continue with the tool needed to fulfill the customer's original request.
-- If the customer asks for product details, resolve the product first if necessary, then use getProductDetails.
-- If the customer asks to add a product to the cart, resolve the product first if necessary, then use addToCart.
-- Do not ask the customer to provide an internal product ID when they have provided a product name.
+- Never invent reviews, ratings, specifications, brands, stock levels, discounts, delivery information, or other product attributes.
+- Only state product facts that are explicitly present in tool results.
+- Do not use your general knowledge to fill missing product information.
+- If a customer asks about an attribute that is not present in the tool result, clearly say that the information is not available in the merchant catalog.
+- Never guess whether a product has a feature.
+- Product IDs and internal matching information are private. Never expose them to the customer.
+- Never expose internal confidence scores.
+- Never claim an action was completed unless the corresponding tool returned success.
+
+PRODUCT RESOLUTION:
+
+- When a customer refers to a product by name and the exact product ID is not known, use resolveProduct.
+- resolveProduct is an internal lookup step, not a final customer-facing action.
+- After successful resolution, continue with the tool required to fulfill the customer's original request.
+
+CART:
+
+- Only modify the cart when the customer explicitly asks.
+- Respect stock limits returned by the backend.
+- Never invent prices or quantities.
+
+ATTRIBUTE LOOKUP RULES:
+
+- When getProductAttribute returns available=true, you may state the returned value.
+- When getProductAttribute returns available=false, the attribute is UNKNOWN.
+- available=false does NOT mean the attribute is false.
+- Never convert an unavailable attribute into "yes" or "no".
+- Never infer an attribute from a product category, description, specifications, or general knowledge.
+- For unavailable attributes, tell the customer that the merchant catalog does not provide that information.
+
+When answering the customer, be concise and natural.
 `,
     },
     {
@@ -272,39 +333,50 @@ Rules:
 
         let toolResult;
 
+
         if (toolName === "searchProducts") {
-          toolResult =
-            searchProducts(toolArguments);
+          toolResult = searchProducts(toolArguments);
 
         } else if (toolName === "getProductDetails") {
-          toolResult =
-            getProductDetails(toolArguments);
+          toolResult = getProductDetails(toolArguments);
 
         } else if (toolName === "addToCart") {
-          toolResult =
-            addToCart(toolArguments);
+          toolResult = addToCart(toolArguments);
 
         } else if (toolName === "getCart") {
           toolResult = getCart();
 
         } else if (toolName === "removeFromCart") {
-          toolResult =
-            removeFromCart(toolArguments);
+          toolResult = removeFromCart(toolArguments);
 
-        }
-        else if (toolName === "resolveProduct") {
-          toolResult =
-            resolveProduct(toolArguments);
+        } else if (toolName === "resolveProduct") {
+          toolResult = resolveProduct(toolArguments);
 
-        } 
-        else {
-          throw new Error(
-            `Unknown tool: ${toolName}`
-          );
+        } else if (toolName === "getProductAttribute") {
+          toolResult = getProductAttribute(toolArguments);
+
+        } else {
+          throw new Error(`Unknown tool: ${toolName}`);
         }
+
 
         console.log("Tool result:");
         console.dir(toolResult, { depth: null });
+
+        // If the requested product attribute is not available,
+        // do not let the LLM guess the answer.
+        if (
+          toolName === "getProductAttribute" &&
+          toolResult.available === false
+        ) {
+          console.log(
+            "Attribute unavailable. Returning grounded response."
+          );
+
+          return res.json({
+            message: toolResult.customerAnswer,
+          });
+        }
 
         // Give tool result back to Qwen
         let toolContent = toolResult;
@@ -313,7 +385,7 @@ Rules:
           toolContent = {
             ...toolResult,
             instruction:
-              "This is an internal product resolution result. Do not show the product ID or internal resolution details to the customer. Continue with the tool required to fulfill the customer's original request.",
+              "This is an internal product resolution result. Do not show product IDs or internal matching information to the customer. Continue with the tool required to fulfill the customer's original request.",
           };
         }
 
