@@ -24,7 +24,9 @@ function getProductDetails({ productName, productId }) {
             (product) => product.id === productId
         );
     } else if (productName) {
-        const resolved = resolveProduct(productName);
+        const resolved = resolveProduct({
+            productName,
+        });
 
         if (!resolved.success) {
             return resolved;
@@ -236,9 +238,30 @@ function getCart() {
     });
 }
 
-function removeFromCart({ productId }) {
+function removeFromCart({ productId, productName }) {
+    let resolvedProductId = productId;
+
+    // If the AI provides a product name instead of an ID,
+    // resolve the name using the merchant catalog.
+    if (!resolvedProductId && productName) {
+        const resolved = resolveProduct({ productName });
+
+        if (!resolved.success) {
+            return resolved;
+        }
+
+        resolvedProductId = resolved.productId;
+    }
+
+    if (!resolvedProductId) {
+        return {
+            success: false,
+            error: "A product ID or product name is required",
+        };
+    }
+
     const itemIndex = cart.findIndex(
-        (item) => item.productId === productId
+        (item) => item.productId === resolvedProductId
     );
 
     if (itemIndex === -1) {
@@ -251,13 +274,14 @@ function removeFromCart({ productId }) {
     const removedItem = cart.splice(itemIndex, 1)[0];
 
     const product = products.find(
-        (product) => product.id === productId
+        (product) => product.id === resolvedProductId
     );
 
     return {
         success: true,
         message: `${product?.name || "Product"} removed from cart`,
-        productId,
+        productId: resolvedProductId,
+        removedItem,
     };
 }
 

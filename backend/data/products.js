@@ -22,7 +22,7 @@ const products = [
     id: "lap002",
     name: "UltraBook Y",
     category: "laptop",
-    price: 58000,
+    price: 45000,
     description: "16GB RAM, 1TB SSD, Intel Core i5 processor",
     stock: 8,
 
@@ -42,7 +42,7 @@ const products = [
     id: "lap003",
     name: "DevBook Z",
     category: "laptop",
-    price: 49000,
+    price: 65000,
     description: "16GB RAM, 512GB SSD, Ryzen 5 processor",
     stock: 15,
 

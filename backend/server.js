@@ -16,7 +16,7 @@ const tools = [
       name: "searchProducts",
 
       description:
-        "Search the merchant product catalog based on category and maximum price.",
+        "Search the merchant product catalog using only the filters explicitly provided by the customer. If the customer does not specify a category, do not invent one; omit the category parameter. If the customer only specifies a maximum price, search all product categories.",
 
       parameters: {
         type: "object",
@@ -24,12 +24,12 @@ const tools = [
         properties: {
           category: {
             type: "string",
-            description: "The product category, such as laptop or phone.",
+            description: "Optional product category. Only provide this when the customer explicitly specifies a category such as laptop, phone, monitor, accessory, or audio. Never guess or invent a category.",
           },
 
           maxPrice: {
             type: "number",
-            description: "The maximum price the customer wants to spend.",
+            description: "Optional maximum price in Indian Rupees. Use this when the customer specifies a budget or maximum price.",
           },
         },
 
@@ -44,7 +44,7 @@ const tools = [
       name: "getProductDetails",
 
       description:
-        "Get detailed information about a specific product. The customer can refer to the product by its name.",
+        "Get detailed information about a product ONLY when the customer asks for product information or specifications. Do NOT use this tool when the customer is asking to add, remove, or otherwise modify the cart.",
 
       parameters: {
         type: "object",
@@ -74,7 +74,7 @@ const tools = [
       name: "addToCart",
 
       description:
-        "Add a product to the customer's cart. Use this only when the customer explicitly asks to add a product.",
+        "Add a product to the customer's cart when the customer explicitly asks to add, buy, or put a product in the cart. If the product name is known but the internal product ID is not known, first use resolveProduct. Do not ask for confirmation before adding when the customer has explicitly requested the add-to-cart action.",
 
       parameters: {
         type: "object",
@@ -125,7 +125,7 @@ const tools = [
       name: "removeFromCart",
 
       description:
-        "Remove a specific product from the customer's shopping cart. Use this only when the customer explicitly asks to remove the product.",
+        "Remove a product from the customer's cart. Provide the product name when the customer refers to the product by name. Provide the product ID only when the internal ID is already known. Never invent a product ID.",
 
       parameters: {
         type: "object",
@@ -133,11 +133,18 @@ const tools = [
         properties: {
           productId: {
             type: "string",
-            description: "The ID of the product to remove from the cart.",
+            description:
+              "Internal product ID returned by the merchant backend. Never invent this ID.",
+          },
+
+          productName: {
+            type: "string",
+            description:
+              "Product name mentioned by the customer, such as ProBook X.",
           },
         },
 
-        required: ["productId"],
+        required: [],
       },
     },
   },
@@ -148,7 +155,7 @@ const tools = [
       name: "resolveProduct",
 
       description:
-        "Internal lookup tool. Resolve a customer-provided product name to the correct catalog product ID. This is NOT a final customer-facing action. After successful resolution, continue using another tool to fulfill the customer's original request.",
+        "Internal lookup tool. Resolve a customer-provided product name to the correct catalog product ID. This is NOT a final customer-facing action. After successful resolution, continue using the tool required by the customer's original request. If the original request is to add the product to the cart, call addToCart next. If the original request is to remove the product from the cart, call removeFromCart next. Do not call getProductDetails unless the customer also requested product information. Never invent a product ID.",
 
       parameters: {
         type: "object",
@@ -210,6 +217,20 @@ app.get("/api/products", (req, res) => {
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message;
 
+  const addToCartMatch =
+    userMessage.match(
+      /\b(add|buy|purchase|put)\s+(\d+)\s+(.+?)\s+(?:to|in|into)\s+(?:my\s+)?(?:cart|basket)\b/i
+    );
+
+  const wantsAddToCart =
+    /\b(add|buy|purchase|put)\b.*\b(cart|basket)\b/i.test(
+      userMessage
+    );
+
+  const requestedQuantity = addToCartMatch
+    ? Number(addToCartMatch[2])
+    : 1;
+
   console.log("User:", userMessage);
 
   const messages = [
@@ -254,6 +275,14 @@ ATTRIBUTE LOOKUP RULES:
 - For unavailable attributes, tell the customer that the merchant catalog does not provide that information.
 
 When answering the customer, be concise and natural.
+
+TOOL SEQUENCING RULES:
+
+- Preserve the customer's original intent throughout the entire tool-calling process.
+- If the customer explicitly asks to add a product to the cart, resolve the product if necessary and then call addToCart. Do not call getProductDetails unless the customer also asked for product information.
+- If the customer explicitly asks to remove a product, resolve the product if necessary and then call removeFromCart.
+- Do not ask for confirmation when the customer has already explicitly requested the cart action.
+- Do not perform an action the customer did not request.
 `,
     },
     {
@@ -263,6 +292,8 @@ When answering the customer, be concise and natural.
   ];
 
   try {
+    let resolvedProductId = null;
+    let resolvedProductName = null;
     // Agent loop
     while (true) {
       const response = await fetch(
@@ -382,11 +413,51 @@ When answering the customer, be concise and natural.
         let toolContent = toolResult;
 
         if (toolName === "resolveProduct") {
+          if (toolResult.success) {
+            resolvedProductId = toolResult.productId;
+            resolvedProductName = toolResult.productName;
+          }
+
           toolContent = {
             ...toolResult,
             instruction:
-              "This is an internal product resolution result. Do not show product IDs or internal matching information to the customer. Continue with the tool required to fulfill the customer's original request.",
+              "This is an internal product resolution result. Do not show product IDs or internal matching information to the customer. Continue with the tool required by the customer's original request.",
           };
+
+          // The customer explicitly asked to add the product.
+          // We already resolved the real catalog product ID,
+          // so execute the cart action directly.
+          if (toolResult.success && wantsAddToCart) {
+            console.log(
+              "Original intent is ADD TO CART. Continuing with addToCart."
+            );
+
+            const addResult = addToCart({
+              productId: toolResult.productId,
+              quantity: requestedQuantity,
+            });
+            
+            console.log("Forced addToCart result:");
+            console.dir(addResult, { depth: null });
+
+            messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(toolContent),
+            });
+
+            if (addResult.success) {
+              return res.json({
+                message: `${toolResult.productName} has been added to your cart.`,
+              });
+            }
+
+            return res.json({
+              message:
+                addResult.error ||
+                `I couldn't add ${toolResult.productName} to your cart.`,
+            });
+          }
         }
 
         messages.push({
