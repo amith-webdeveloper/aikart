@@ -1,5 +1,6 @@
 const products = require("../data/products");
 const cart = require("../data/cart");
+const stringSimilarity = require("string-similarity");
 
 function searchProducts({ category, maxPrice }) {
   const results = products.filter((product) => {
@@ -129,6 +130,57 @@ function removeFromCart({ productId }) {
   };
 }
 
+function resolveProduct(productName) {
+  const normalizedInput = productName
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+
+  const exactMatch = products.find(
+    (product) =>
+      product.name.toLowerCase().trim() === normalizedInput
+  );
+
+  if (exactMatch) {
+    return {
+      success: true,
+      product: exactMatch,
+      confidence: 1,
+    };
+  }
+
+  const matches = products.map((product) => {
+    const similarity = stringSimilarity.compareTwoStrings(
+      normalizedInput,
+      product.name.toLowerCase()
+    );
+
+    return {
+      product,
+      confidence: similarity,
+    };
+  });
+
+  matches.sort(
+    (a, b) => b.confidence - a.confidence
+  );
+
+  const bestMatch = matches[0];
+
+  if (!bestMatch || bestMatch.confidence < 0.6) {
+    return {
+      success: false,
+      error: "No confident product match found",
+    };
+  }
+
+  return {
+    success: true,
+    product: bestMatch.product,
+    confidence: bestMatch.confidence,
+  };
+}
+
 
 module.exports = {
   searchProducts,
@@ -136,22 +188,11 @@ module.exports = {
   addToCart,
   getCart,
   removeFromCart,
+  resolveProduct,
 };
 
 
-addToCart({
-  productId: "lap001",
-  quantity: 1,
-});
-
-console.log("Before removal:");
-console.log(getCart());
 
 console.log(
-  removeFromCart({
-    productId: "lap001",
-  })
+  resolveProduct("ProBook X")
 );
-
-console.log("After removal:");
-console.log(getCart());
