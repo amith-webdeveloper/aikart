@@ -314,8 +314,178 @@ function getRequestedQuantity(userMessage) {
   };
 }
 
+function getStorageInGB(storageValue) {
+  if (typeof storageValue !== "string") {
+    return null;
+  }
+
+  const value = storageValue.toLowerCase().trim();
+
+  const match = value.match(
+    /(\d+(?:\.\d+)?)\s*(tb|gb)/
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+
+  return unit === "tb"
+    ? amount * 1024
+    : amount;
+}
+
+function isUnqualifiedMostStorageRequest(userMessage) {
+  if (typeof userMessage !== "string") {
+    return false;
+  }
+
+  const message = userMessage.toLowerCase();
+
+  const asksMostStorage =
+    /\b(most|maximum|highest|largest)\b/.test(message) &&
+    /\b(storage|space)\b/.test(message);
+
+  if (!asksMostStorage) {
+    return false;
+  }
+
+  // If the user already supplied a concrete search constraint,
+  // let the normal search flow handle it.
+  const hasExplicitConstraint =
+    /\b(under|below|less than|within|budget|₹|\brs\.?|inr)\b/.test(message) ||
+    /\b(laptop|phone|monitor|keyboard|mouse|ssd|headphone|accessory)\b/.test(message);
+
+  return !hasExplicitConstraint;
+}
+
+function isWorthItRequest(userMessage) {
+  if (typeof userMessage !== "string") {
+    return false;
+  }
+
+  return /\b(worth it|worth buying|good value|value for money|good buy)\b/i
+    .test(userMessage);
+}
+
+function hasUnsupportedEvaluationClaim(responseText) {
+  if (typeof responseText !== "string") {
+    return true;
+  }
+
+  const forbiddenPatterns = [
+    /\bcompetitively priced\b/i,
+    /\bcompetitive price\b/i,
+    /\btop[- ]tier\b/i,
+    /\bhigh[- ]performance\b/i,
+    /\breliable\b/i,
+    /\bgood investment\b/i,
+    /\bbest value\b/i,
+    /\bbest option\b/i,
+    /\bgood performance\b/i,
+    /\bpowerful device\b/i,
+    /\baverage range\b/i,
+    /\bmedium[- ]to[- ]high[- ]end\b/i,
+  ];
+
+  return forbiddenPatterns.some((pattern) =>
+    pattern.test(responseText)
+  );
+}
+
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message;
+
+
+  if (isUnqualifiedMostStorageRequest(userMessage)) {
+    console.log(
+      "Unqualified most-storage request detected."
+    );
+
+    const searchArguments = {
+      category: "laptop",
+    };
+
+    console.log(
+      "Fallback search arguments:",
+      searchArguments
+    );
+
+    const searchResult = searchProducts(searchArguments);
+
+    if (
+      !Array.isArray(searchResult) ||
+      searchResult.length === 0
+    ) {
+      return res.json({
+        message:
+          "I couldn't find any relevant products with storage information in the catalog.",
+      });
+    }
+
+    const productsWithStorage = searchResult
+      .map((product) => {
+        const storage =
+          product.specifications?.storage;
+
+        const storageGB =
+          getStorageInGB(storage);
+
+        return {
+          product,
+          storageGB,
+        };
+      })
+      .filter(
+        ({ storageGB }) =>
+          storageGB !== null
+      );
+
+    if (productsWithStorage.length === 0) {
+      return res.json({
+        message:
+          "The merchant catalog does not provide enough storage information to determine which product has the most storage.",
+      });
+    }
+
+    const mostStorageProduct =
+      productsWithStorage.reduce(
+        (best, current) => {
+          if (
+            !best ||
+            current.storageGB > best.storageGB
+          ) {
+            return current;
+          }
+
+          return best;
+        },
+        null
+      );
+
+    console.log(
+      "Deterministically selected product with most storage:",
+      {
+        id: mostStorageProduct.product.id,
+        name: mostStorageProduct.product.name,
+        storage:
+          mostStorageProduct.product.specifications?.storage,
+        storageGB:
+          mostStorageProduct.storageGB,
+      }
+    );
+
+    return res.json({
+      message:
+        `${mostStorageProduct.product.name} has the most storage with ${mostStorageProduct.product.specifications.storage}.`,
+    });
+  }
 
   const addToCartMatch =
     userMessage.match(
@@ -393,6 +563,8 @@ TOOL SEQUENCING RULES:
   try {
     let resolvedProductId = null;
     let resolvedProductName = null;
+    let evaluationProduct = null;
+
     // Agent loop
     while (true) {
       const response = await fetch(
@@ -433,14 +605,79 @@ TOOL SEQUENCING RULES:
       // NO MORE TOOLS → FINAL ANSWER
 
       if (!assistantMessage.tool_calls?.length) {
+        const finalAnswer =
+          assistantMessage.content?.trim() || "";
+
+        /*
+         * EVALUATION RESPONSE VALIDATION
+         *
+         * Qwen may still generate unsupported value/performance claims
+         * even when the evaluation prompt explicitly forbids them.
+         *
+         * Do not return such a response directly to the customer.
+         */
+        if (
+          isWorthItRequest(userMessage) &&
+          hasUnsupportedEvaluationClaim(finalAnswer)
+        ) {
+          console.log(
+            "Blocked unsupported product-evaluation claim."
+          );
+
+          console.log(
+            "Rejected evaluation response:",
+            finalAnswer
+          );
+
+          const product = evaluationProduct;
+
+          if (product) {
+            const processor =
+              product.specifications?.processor;
+
+            const ram =
+              product.specifications?.ram;
+
+            const storage =
+              product.specifications?.storage;
+
+            const display =
+              product.specifications?.display;
+
+            const facts = [
+              `${product.name} is listed at ₹${product.price.toLocaleString("en-IN")}.`,
+              processor ? `It has an ${processor} processor.` : null,
+              ram ? `It has ${ram} RAM.` : null,
+              storage ? `It has ${storage}.` : null,
+              display ? `It has a ${display} display.` : null,
+              typeof product.rating === "number"
+                ? `Its catalog rating is ${product.rating}.`
+                : null,
+            ].filter(Boolean);
+
+            return res.json({
+              message:
+                `${facts.join(" ")} ` +
+                `Based only on the merchant catalog, these are the available product facts. ` +
+                `However, the catalog does not provide benchmark results, battery information, ` +
+                `competitor pricing, or other information needed to determine whether ` +
+                `₹${product.price.toLocaleString("en-IN")} represents the best value.`,
+            });
+          }
+
+          return res.json({
+            message:
+              "I couldn't provide a grounded product evaluation from the available merchant catalog information.",
+          });
+        }
+
         console.log("Final AI response:");
-        console.log(assistantMessage.content);
+        console.log(finalAnswer);
 
         return res.json({
-          message: assistantMessage.content,
+          message: finalAnswer,
         });
       }
-
       // EXECUTE TOOL CALLS
 
       for (const toolCall of assistantMessage.tool_calls) {
@@ -481,6 +718,153 @@ TOOL SEQUENCING RULES:
           );
 
           toolResult = searchProducts(safeSearchArguments);
+
+          /*
+           * DETERMINISTIC CHEAPEST-PRODUCT SELECTION
+           *
+           * If the customer explicitly asks to add the cheapest
+           * product, do not let the LLM choose which product is cheapest.
+           */
+          const isCheapestAddRequest =
+            /\bcheapest\b/i.test(userMessage) &&
+            isExplicitCartAddRequest(userMessage);
+
+          if (
+            isCheapestAddRequest &&
+            Array.isArray(toolResult) &&
+            toolResult.length > 0
+          ) {
+            const cheapestProduct = toolResult.reduce(
+              (cheapest, product) => {
+                if (
+                  typeof product.price === "number" &&
+                  (
+                    !cheapest ||
+                    product.price < cheapest.price
+                  )
+                ) {
+                  return product;
+                }
+
+                return cheapest;
+              },
+              null
+            );
+
+            if (!cheapestProduct) {
+              return res.json({
+                message:
+                  "I couldn't determine the cheapest product from the available catalog results.",
+              });
+            }
+
+            console.log(
+              "Deterministically selected cheapest product:",
+              {
+                id: cheapestProduct.id,
+                name: cheapestProduct.name,
+                price: cheapestProduct.price,
+              }
+            );
+
+            const addResult = addToCart({
+              productId: cheapestProduct.id,
+              productName: cheapestProduct.name,
+              quantity: requestedQuantity,
+            });
+
+            console.log(
+              "Deterministic cheapest addToCart result:"
+            );
+            console.dir(addResult, { depth: null });
+
+            if (addResult.success) {
+              return res.json({
+                message:
+                  `${cheapestProduct.name} has been added to your cart.`,
+              });
+            }
+
+            return res.json({
+              message:
+                addResult.error ||
+                `I couldn't add ${cheapestProduct.name} to your cart.`,
+            });
+          }
+
+          /*
+           * DETERMINISTIC MOST-STORAGE SELECTION
+           *
+           * If the customer asks which matching product has
+           * the most storage, do not let the LLM decide.
+           */
+          const isMostStorageRequest =
+            /\b(most|maximum|highest)\b/i.test(userMessage) &&
+            /\b(storage|space)\b/i.test(userMessage);
+
+          if (
+            isMostStorageRequest &&
+            Array.isArray(toolResult) &&
+            toolResult.length > 0
+          ) {
+            const productsWithStorage = toolResult
+              .map((product) => {
+                const storage =
+                  product.specifications?.storage;
+
+                const storageGB =
+                  getStorageInGB(storage);
+
+                return {
+                  product,
+                  storageGB,
+                };
+              })
+              .filter(
+                ({ storageGB }) =>
+                  storageGB !== null
+              );
+
+            if (productsWithStorage.length === 0) {
+              return res.json({
+                message:
+                  "The merchant catalog does not provide enough storage information to determine which product has the most storage.",
+              });
+            }
+
+            const mostStorageProduct =
+              productsWithStorage.reduce(
+                (best, current) => {
+                  if (
+                    !best ||
+                    current.storageGB > best.storageGB
+                  ) {
+                    return current;
+                  }
+
+                  return best;
+                },
+                null
+              );
+
+            console.log(
+              "Deterministically selected product with most storage:",
+              {
+                id: mostStorageProduct.product.id,
+                name: mostStorageProduct.product.name,
+                storage:
+                  mostStorageProduct.product.specifications
+                    ?.storage,
+                storageGB:
+                  mostStorageProduct.storageGB,
+              }
+            );
+
+            return res.json({
+              message:
+                `${mostStorageProduct.product.name} has the most storage with ${mostStorageProduct.product.specifications.storage}.`,
+            });
+          }
         } else if (toolName === "getProductDetails") {
           toolResult = getProductDetails(toolArguments);
 
@@ -537,8 +921,24 @@ TOOL SEQUENCING RULES:
           toolResult = getCart();
 
         } else if (toolName === "removeFromCart") {
-          toolResult = removeFromCart(toolArguments);
+          const safeRemoveArguments = {
+            ...toolArguments,
+          };
 
+          // Never trust a product ID invented by the LLM.
+          // If we already resolved the customer's product,
+          // use the trusted catalog ID from the backend.
+          if (resolvedProductId) {
+            safeRemoveArguments.productId = resolvedProductId;
+            delete safeRemoveArguments.productName;
+          }
+
+          console.log(
+            "Validated removeFromCart arguments:",
+            safeRemoveArguments
+          );
+
+          toolResult = removeFromCart(safeRemoveArguments);
         } else if (toolName === "resolveProduct") {
           const productName = toolArguments.productName || "";
 
@@ -549,8 +949,25 @@ TOOL SEQUENCING RULES:
             /\b(laptop|phone|monitor|accessory|audio|product|development|budget|under|around|below)\b/i.test(
               userMessage
             );
+          const isEvaluationRequest =
+            isWorthItRequest(userMessage);
 
-          if (isRecommendationRequest) {
+          if (isEvaluationRequest) {
+            console.log(
+              "Product evaluation request detected."
+            );
+
+            toolResult = resolveProduct(toolArguments);
+
+            if (!toolResult.success) {
+              // Let the normal agent handle the failed resolution.
+            } else {
+              console.log(
+                "Resolved product for evaluation:",
+                toolResult
+              );
+            }
+          } else if (isRecommendationRequest) {
             const safeSearchArguments = enforceSearchConstraints(
               userMessage,
               {}
@@ -602,6 +1019,122 @@ TOOL SEQUENCING RULES:
           if (toolResult.success) {
             resolvedProductId = toolResult.productId;
             resolvedProductName = toolResult.productName;
+          }
+
+          if (
+            toolResult.success &&
+            isWorthItRequest(userMessage)
+          ) {
+            console.log(
+              "Evaluation request: fetching full product details."
+            );
+
+            const detailsResult = getProductDetails({
+              productId: toolResult.productId,
+            });
+
+            console.log(
+              "Evaluation product details:"
+            );
+            console.dir(detailsResult, { depth: null });
+
+            if (!detailsResult.success) {
+              return res.json({
+                message:
+                  detailsResult.error ||
+                  "I couldn't retrieve enough product information to evaluate it.",
+              });
+            }
+
+
+            evaluationProduct = detailsResult.product;
+
+            messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: JSON.stringify({
+                ...toolResult,
+                instruction:
+                  "Internal resolution result. Do not expose product IDs.",
+              }),
+            });
+
+            messages.push({
+              role: "user",
+              content: `
+The customer is asking whether this product is worth it.
+
+Answer the customer's question using ONLY the merchant catalog facts
+provided below.
+
+Your answer MUST:
+1. State the important facts from the catalog.
+2. Give a cautious assessment based on those facts.
+3. Clearly state when the catalog does not contain enough information
+   to make a definitive value judgment.
+
+Do NOT ask the customer for their budget, preferences, or requirements.
+Answer the question with the information already available.
+
+IMPORTANT:
+A product specification is a FACT, not proof of performance.
+
+For example:
+- "It has 16GB RAM" is allowed.
+- "It has a Ryzen 7 processor" is allowed.
+- "It costs ₹55,000" is allowed.
+- "It has a 4.5 rating" is allowed.
+
+But these statements are NOT allowed unless the merchant catalog
+explicitly supports them:
+- "It is competitively priced."
+- "It is high-performance."
+- "It is top-tier."
+- "It is reliable."
+- "It is a good investment."
+- "It is the best option."
+- "It is the best value."
+- "It provides good performance."
+- "It will perform well."
+- "It is suitable for most users."
+
+Do NOT invent or infer:
+- benchmark results
+- battery life
+- GPU performance
+- build quality
+- durability
+- warranty
+- competitor prices
+- market prices
+- competitor comparisons
+- user experience
+- missing features
+
+Do not use the product's stock quantity to make recommendations about
+availability or urgency.
+
+If the catalog does not provide enough information to determine whether
+₹55,000 is good value compared with alternatives, say that clearly.
+
+Do not refuse to answer merely because comparison information is missing.
+Give the useful assessment that can be made from the catalog facts first,
+then explain the limitation.
+
+Never expose:
+- internal product IDs
+- tool calls
+- confidence scores
+- resolution information
+- internal system information
+
+Merchant catalog information:
+
+${JSON.stringify(detailsResult.product, null, 2)}
+`,
+            });
+
+            continue;
           }
 
           toolContent = {
