@@ -379,12 +379,75 @@ function isWorthItRequest(userMessage) {
     .test(userMessage);
 }
 
+function findProductForEvaluation(userMessage) {
+  if (typeof userMessage !== "string") {
+    return null;
+  }
+
+  const normalizedMessage = userMessage
+    .toLowerCase()
+    .trim();
+
+  /*
+   * First prefer an exact product-name mention.
+   *
+   * Example:
+   * "Is ProBook X worth it?"
+   */
+  const exactMatch = products.find((product) => {
+    const normalizedProductName = product.name
+      .toLowerCase()
+      .trim();
+
+    return normalizedMessage.includes(
+      normalizedProductName
+    );
+  });
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  /*
+   * If the customer uses a shortened product name,
+   * allow a catalog product whose name begins with
+   * the supplied product term.
+   *
+   * Example:
+   * "Is the ProBook worth it?"
+   * → ProBook X
+   */
+  const words = normalizedMessage
+    .replace(/[₹$]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const candidate = products.find((product) => {
+    const productName =
+      product.name.toLowerCase().trim();
+
+    const productWords =
+      productName.split(/\s+/);
+
+    return productWords.some((productWord) => {
+      if (productWord.length < 4) {
+        return false;
+      }
+
+      return words.includes(productWord);
+    });
+  });
+
+  return candidate || null;
+}
+
 function hasUnsupportedEvaluationClaim(responseText) {
   if (typeof responseText !== "string") {
     return true;
   }
 
   const forbiddenPatterns = [
+    // Unsupported value / quality claims
     /\bcompetitively priced\b/i,
     /\bcompetitive price\b/i,
     /\btop[- ]tier\b/i,
@@ -397,6 +460,54 @@ function hasUnsupportedEvaluationClaim(responseText) {
     /\bpowerful device\b/i,
     /\baverage range\b/i,
     /\bmedium[- ]to[- ]high[- ]end\b/i,
+
+    // Unsupported suitability claims
+    /\bsuitable for\b/i,
+    /\bgood for most users\b/i,
+    /\bideal for\b/i,
+    /\bperfect for\b/i,
+    /\bgreat for\b/i,
+
+    // Unsupported user-preference / requirement reasoning
+    /\bdepends on your (needs|requirements|preferences)\b/i,
+    /\bdepends on (your|the customer's) budget\b/i,
+    /\bdepends on your specific needs\b/i,
+    /\bdepends on your specific preferences\b/i,
+    /\bdepends on your use case\b/i,
+
+    // Unsupported comparative/value reasoning
+    /\bwithin the normal range\b/i,
+    /\bnormal price range\b/i,
+    /\bcompetitive with other\b/i,
+    /\bbetter than other\b/i,
+    /\bworse than other\b/i,
+    /\bworthwhile purchase\b/i,
+    /\bsolid choice\b/i,
+    /\bsolid laptop\b/i,
+    /\bcapable and reliable\b/i,
+    /\bwell[- ]rounded\b/i,
+
+    // Unsupported positive evaluation
+    /\bthese are good specifications\b/i,
+    /bthese are good specs\b/i,
+    /bthese specifications are good\b/i,
+    /\bgood specifications\b/i,
+    /\bgood specs\b/i,
+
+    // Unsupported purchase advice
+    /\bit is advisable to consider\b/i,
+    /\badvisable to consider\b/i,
+    /\byou should consider\b/i,
+    /\byou may want to consider\b/i,
+    /\bconsider your specific needs\b/i,
+    /\bconsider your needs\b/i,
+    /\bconsider your budget\b/i,
+
+    // Unsupported suitability/performance
+    /\bcomfortable for general use\b/i,
+    /\bsuitable for very demanding tasks\b/i,
+    /\bnot suitable for\b/i,
+    /\bmay not be suitable for\b/i,
   ];
 
   return forbiddenPatterns.some((pattern) =>
@@ -436,6 +547,45 @@ function isInternalInformationRequest(userMessage) {
     )
   );
 }
+
+function hasCompleteSearchProductNames(responseText, searchResults) {
+  if (
+    typeof responseText !== "string" ||
+    !Array.isArray(searchResults)
+  ) {
+    return true;
+  }
+
+  return searchResults.every((product) => {
+    if (!product || typeof product.name !== "string") {
+      return true;
+    }
+
+    return responseText.includes(product.name);
+  });
+}
+
+
+// --------------------------------------------------
+// TEST-ONLY CART RESET
+// --------------------------------------------------
+
+app.post("/api/test/reset-cart", (req, res) => {
+  if (process.env.NODE_ENV !== "test") {
+    return res.status(404).json({
+      error: "Not found",
+    });
+  }
+
+  const cart = require("./data/cart");
+
+  cart.length = 0;
+
+  return res.json({
+    success: true,
+    message: "Test cart reset successfully",
+  });
+});
 
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message;
@@ -611,6 +761,116 @@ TOOL SEQUENCING RULES:
     let resolvedProductName = null;
     let evaluationProduct = null;
 
+    // Stores the latest merchant search result so the backend
+    // can verify that the final AI response faithfully represents
+    // the catalog products returned by searchProducts.
+    let latestSearchResults = null;
+
+    // --------------------------------------------------
+    // DETERMINISTIC WORTH-IT EVALUATION
+    // --------------------------------------------------
+
+    if (isWorthItRequest(userMessage)) {
+      console.log(
+        "Deterministic product evaluation request detected."
+      );
+
+      const product =
+        findProductForEvaluation(userMessage);
+
+      if (product) {
+        console.log(
+          "Deterministically identified evaluation product:",
+          {
+            name: product.name,
+          }
+        );
+
+        const detailsResult =
+          getProductDetails({
+            productId: product.id,
+          });
+
+        if (
+          !detailsResult.success ||
+          !detailsResult.product
+        ) {
+          return res.json({
+            message:
+              "I couldn't retrieve enough product information from the merchant catalog to evaluate it.",
+          });
+        }
+
+        evaluationProduct =
+          detailsResult.product;
+
+        resolvedProductId =
+          detailsResult.product.id;
+
+        resolvedProductName =
+          detailsResult.product.name;
+
+        messages.push({
+          role: "user",
+          content: `
+The customer is asking whether this product is worth it.
+
+Answer the customer's question using ONLY the merchant catalog facts
+provided below.
+
+Your answer MUST:
+1. State the important facts from the catalog.
+2. Give a cautious assessment based only on those facts.
+3. Clearly state when the catalog does not contain enough information
+   to make a definitive value judgment.
+4. Do NOT ask the customer for their budget, preferences, or requirements.
+
+A product specification is a FACT, not proof of performance.
+
+Allowed examples:
+- "It has 16GB RAM."
+- "It has an AMD Ryzen 7 processor."
+- "It costs ₹55,000."
+- "It has a 4.5 catalog rating."
+
+Do NOT claim:
+- competitive pricing
+- market value
+- high performance
+- reliability
+- durability
+- best value
+- best option
+- suitability for specific workloads
+- benchmark results
+- battery life
+- GPU performance
+- competitor comparisons
+- market prices
+- warranty information
+- features not present in the catalog
+
+Never expose:
+- product IDs
+- confidence scores
+- internal tool information
+- internal system information
+
+Merchant catalog information:
+
+${JSON.stringify(
+            detailsResult.product,
+            null,
+            2
+          )}
+`,
+        });
+
+        // Skip the normal tool-selection phase.
+        // Qwen is now only responsible for producing
+        // the customer-facing explanation.
+      }
+    }
     // Agent loop
     while (true) {
       const response = await fetch(
@@ -662,6 +922,53 @@ TOOL SEQUENCING RULES:
           return res.json({
             message:
               "I can't provide internal product IDs, confidence scores, or other internal system information.",
+          });
+        }
+
+        // --------------------------------------------------
+        // SEARCH RESULT COMPLETENESS VALIDATION
+        // --------------------------------------------------
+        //
+        // The AI must preserve the exact merchant product names
+        // returned by searchProducts. It must not replace a
+        // product name with its description or paraphrase it.
+        //
+        // Example:
+        // Catalog: "FastSSD 1TB"
+        // Invalid AI response: "1TB NVMe SSD"
+        //
+        if (
+          latestSearchResults &&
+          latestSearchResults.length > 0 &&
+          !hasCompleteSearchProductNames(
+            finalAnswer,
+            latestSearchResults
+          )
+        ) {
+          console.log(
+            "Blocked incomplete search response."
+          );
+
+          console.log(
+            "Rejected search response:",
+            finalAnswer
+          );
+
+          const catalogLines = latestSearchResults.map(
+            (product) => {
+              const price =
+                typeof product.price === "number"
+                  ? `₹${product.price.toLocaleString("en-IN")}`
+                  : "Price unavailable";
+
+              return `- ${product.name}: ${price}`;
+            }
+          );
+
+          return res.json({
+            message:
+              `Here are the products from the merchant catalog:\n\n` +
+              catalogLines.join("\n"),
           });
         }
 
@@ -855,6 +1162,12 @@ TOOL SEQUENCING RULES:
           );
 
           toolResult = searchProducts(safeSearchArguments);
+
+          // Preserve the exact merchant catalog results.
+          // The final AI response must not rename or omit products.
+          latestSearchResults = Array.isArray(toolResult)
+            ? toolResult
+            : null;
 
           /*
            * DETERMINISTIC CHEAPEST-PRODUCT SELECTION
