@@ -264,36 +264,41 @@ function enforceSearchConstraints(userMessage, toolArguments) {
 }
 
 function isExplicitCartAddRequest(userMessage) {
-  const message = userMessage.trim().toLowerCase();
-
-  // Explicit cart wording
-  if (
-    /\b(add|put)\b.+\b(to|in|into)\b.+\b(cart|basket)\b/i.test(message)
-  ) {
-    return true;
+  if (typeof userMessage !== "string") {
+    return false;
   }
 
-  // Explicit purchase wording
-  if (/\b(buy|purchase)\b/i.test(message)) {
-    return true;
-  }
+  const message = userMessage.toLowerCase();
 
-  // Short direct command:
-  // "Add ProBook X"
-  // "Add 3 ProBook X"
-  //
-  // Do NOT treat sentences like
-  // "tell me I can buy it"
-  // as authorization.
-  if (
-    /^(add|put)\s+(?:-?\d+(?:\.\d+)?\s+)?[a-z0-9][a-z0-9\s-]*$/i.test(
+  /*
+   * Explicit negation / denial of the cart request.
+   *
+   * Examples:
+   * "I didn't explicitly ask"
+   * "I did not ask"
+   * "don't add it"
+   * "do not add it"
+   *
+   * These must never authorize a cart mutation.
+   */
+  const hasNegatedCartIntent =
+    /\b(didn't|did not|dont|don't|do not|not)\b.*\b(ask|want|authorize|approve|request)\b/i.test(
       message
-    )
-  ) {
-    return true;
+    ) ||
+    /\b(don't|do not|dont)\b.*\b(add|buy|purchase|put)\b/i.test(
+      message
+    );
+
+  if (hasNegatedCartIntent) {
+    return false;
   }
 
-  return false;
+  /*
+   * Positive explicit cart request.
+   */
+  return /\b(add|buy|purchase|put)\b.*\b(to|in|into)\b.*\b(cart|basket)\b/i.test(
+    message
+  );
 }
 
 function getRequestedQuantity(userMessage) {
@@ -436,15 +441,15 @@ app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message;
 
   if (isInternalInformationRequest(userMessage)) {
-  console.log(
-    "Blocked internal information request."
-  );
+    console.log(
+      "Blocked internal information request."
+    );
 
-  return res.json({
-    message:
-      "I can't provide internal product IDs, confidence scores, or other internal system information.",
-  });
-}
+    return res.json({
+      message:
+        "I can't provide internal product IDs, confidence scores, or other internal system information.",
+    });
+  }
 
 
   if (isUnqualifiedMostStorageRequest(userMessage)) {
@@ -535,10 +540,7 @@ app.post("/api/chat", async (req, res) => {
     userMessage.match(
       /\b(add|buy|purchase|put)\s+(-?\d+(?:\.\d+)?)\s+(.+?)\s+(?:to|in|into)\s+(?:my\s+)?(?:cart|basket)\b/i
     );
-  const wantsAddToCart =
-    /\b(add|buy|purchase|put)\b.*\b(cart|basket)\b/i.test(
-      userMessage
-    );
+  const wantsAddToCart = isExplicitCartAddRequest(userMessage);
 
   const requestedQuantity = addToCartMatch
     ? Number(addToCartMatch[2])
@@ -945,7 +947,9 @@ TOOL SEQUENCING RULES:
             const productsWithStorage = toolResult
               .map((product) => {
                 const storage =
-                  product.specifications?.storage;
+                  product.specifications?.storage ||
+                  product.description ||
+                  product.name;
 
                 const storageGB =
                   getStorageInGB(storage);
@@ -995,9 +999,17 @@ TOOL SEQUENCING RULES:
               }
             );
 
+            const selectedProduct =
+              mostStorageProduct.product;
+
+            const selectedStorage =
+              selectedProduct.specifications?.storage ||
+              selectedProduct.description ||
+              selectedProduct.name;
+
             return res.json({
               message:
-                `${mostStorageProduct.product.name} has the most storage with ${mostStorageProduct.product.specifications.storage}.`,
+                `${selectedProduct.name} has the most storage with ${selectedStorage}.`,
             });
           }
         } else if (toolName === "getProductDetails") {
@@ -1281,7 +1293,10 @@ ${JSON.stringify(detailsResult.product, null, 2)}
           // The customer explicitly asked to add the product.
           // We already resolved the real catalog product ID,
           // so execute the cart action directly.
-          if (toolResult.success && wantsAddToCart) {
+          if (
+            toolResult.success &&
+            isExplicitCartAddRequest(userMessage)
+          ) {
             console.log(
               "Original intent is ADD TO CART. Continuing with addToCart."
             );
