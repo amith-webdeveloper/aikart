@@ -399,8 +399,52 @@ function hasUnsupportedEvaluationClaim(responseText) {
   );
 }
 
+function containsInternalProductId(responseText, productId) {
+  if (
+    typeof responseText !== "string" ||
+    typeof productId !== "string" ||
+    !productId
+  ) {
+    return false;
+  }
+
+  return (
+    responseText.includes(productId) ||
+    /\bproduct\s*id\b/i.test(responseText)
+  );
+}
+
+function isInternalInformationRequest(userMessage) {
+  if (typeof userMessage !== "string") {
+    return false;
+  }
+
+  return (
+    /\b(product\s*id|product\s*ids|internal\s+id|internal\s+ids)\b/i.test(
+      userMessage
+    ) ||
+    /\b(confidence\s*score|confidence\s*scores|confidence)\b/i.test(
+      userMessage
+    ) ||
+    /\b(internal\s+information|internal\s+system|internal\s+data)\b/i.test(
+      userMessage
+    )
+  );
+}
+
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message;
+
+  if (isInternalInformationRequest(userMessage)) {
+  console.log(
+    "Blocked internal information request."
+  );
+
+  return res.json({
+    message:
+      "I can't provide internal product IDs, confidence scores, or other internal system information.",
+  });
+}
 
 
   if (isUnqualifiedMostStorageRequest(userMessage)) {
@@ -607,6 +651,97 @@ TOOL SEQUENCING RULES:
       if (!assistantMessage.tool_calls?.length) {
         const finalAnswer =
           assistantMessage.content?.trim() || "";
+
+        if (!finalAnswer) {
+          console.log(
+            "Blocked empty LLM response."
+          );
+
+          return res.json({
+            message:
+              "I can't provide internal product IDs, confidence scores, or other internal system information.",
+          });
+        }
+
+
+        /*
+         * INTERNAL PRODUCT ID LEAK PROTECTION
+         *
+         * Product IDs are merchant-internal information.
+         * Never allow the LLM to expose them to the customer.
+         */
+        if (
+          resolvedProductId &&
+          containsInternalProductId(
+            finalAnswer,
+            resolvedProductId
+          )
+        ) {
+          console.log(
+            "Blocked internal product ID leakage."
+          );
+
+          console.log(
+            "Rejected response:",
+            finalAnswer
+          );
+
+          const detailsResult = getProductDetails({
+            productId: resolvedProductId,
+          });
+
+          if (
+            detailsResult.success &&
+            detailsResult.product
+          ) {
+            const product =
+              detailsResult.product;
+
+            const processor =
+              product.specifications?.processor;
+
+            const ram =
+              product.specifications?.ram;
+
+            const storage =
+              product.specifications?.storage;
+
+            const display =
+              product.specifications?.display;
+
+            const facts = [
+              `${product.name} is a ${product.category}.`,
+              processor
+                ? `It has an ${processor} processor.`
+                : null,
+              ram
+                ? `It has ${ram} RAM.`
+                : null,
+              storage
+                ? `It has ${storage}.`
+                : null,
+              display
+                ? `It has a ${display} display.`
+                : null,
+              typeof product.price === "number"
+                ? `It is priced at ₹${product.price.toLocaleString("en-IN")}.`
+                : null,
+              typeof product.rating === "number"
+                ? `Its catalog rating is ${product.rating}.`
+                : null,
+            ].filter(Boolean);
+
+            return res.json({
+              message: facts.join(" "),
+            });
+          }
+
+          return res.json({
+            message:
+              "I found the product, but I couldn't retrieve its catalog details.",
+          });
+        }
+
 
         /*
          * EVALUATION RESPONSE VALIDATION

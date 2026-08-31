@@ -57,7 +57,13 @@ Medium
 
 ### Status
 
-Found — Fix pending.
+Fixed — Regression test passed.
+
+### Regression Result
+
+The backend returned all 5 products matching the ₹5000 maximum-price
+constraint, and the AI correctly presented all 5 products without omitting
+catalog results or inventing an unspecified category constraint.
 
 ---
 
@@ -147,7 +153,16 @@ High
 
 ### Status
 
-Found — Fix pending.
+Fixed — Regression test passed.
+
+### Regression Result
+
+The backend now detects internal product IDs in LLM-generated
+customer-facing responses and blocks those responses before they reach
+the customer.
+
+A regression test requesting the internal product ID of ProBook X
+confirmed that `lap001` was not exposed in the API response.
 
 
 
@@ -209,7 +224,16 @@ Medium
 
 ### Status
 
-Found — Fix pending.
+Fixed — Regression test passed.
+
+### Regression Result
+
+Requests for internal product IDs, confidence scores, or other internal
+system information are now blocked before reaching the normal agent/tool
+flow.
+
+The backend returns a clear customer-facing refusal instead of allowing
+an empty response or an unnecessary tool call.
 
 ## Failure 6 — Unauthorized Cart Mutation
 ### User Input
@@ -279,7 +303,23 @@ Medium/High
 
 ### Status
 
-Found — Fix pending.
+Fixed — Regression test passed.
+
+### Regression Result
+
+The backend now preserves the explicit laptop constraint even when the
+LLM omits the category from its search arguments.
+
+For the test request "I've got around 55k. What laptop makes sense?",
+the enforced search arguments were:
+
+{
+  "category": "laptop",
+  "maxPrice": 55000
+}
+
+The catalog returned only laptop products within the specified budget,
+and no products from other categories were returned.
 
 
 
