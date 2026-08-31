@@ -5,6 +5,8 @@ const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, r
 
 const app = express();
 
+
+
 app.use(cors());
 app.use(express.json());
 
