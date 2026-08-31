@@ -175,10 +175,10 @@ function addToCart({ productName, productId, quantity = 1 }) {
         };
     }
 
-    if (quantity <= 0) {
+    if (!Number.isInteger(quantity) || quantity <= 0) {
         return {
             success: false,
-            error: "Quantity must be at least 1",
+            error: "Quantity must be a positive whole number",
         };
     }
 
