@@ -216,14 +216,111 @@ app.get("/api/products", (req, res) => {
   res.json(products);
 });
 
+function enforceSearchConstraints(userMessage, toolArguments) {
+  const message = userMessage.toLowerCase();
+
+  const enforcedArguments = {
+    ...toolArguments,
+  };
+
+  // Explicit category constraints
+  const categoryPatterns = [
+    { category: "laptop", patterns: [/\blaptop(s)?\b/i] },
+    { category: "phone", patterns: [/\bphone(s)?\b/i, /\bmobile(s)?\b/i] },
+    { category: "monitor", patterns: [/\bmonitor(s)?\b/i, /\bscreen(s)?\b/i] },
+    { category: "accessory", patterns: [/\baccessor(y|ies)\b/i] },
+    { category: "audio", patterns: [/\baudio\b/i, /\bheadphone(s)?\b/i] },
+  ];
+
+  for (const { category, patterns } of categoryPatterns) {
+    if (patterns.some((pattern) => pattern.test(message))) {
+      enforcedArguments.category = category;
+      break;
+    }
+  }
+
+  // Explicit maximum budget
+  const budgetMatch = message.match(
+    /(?:under|below|less than|within|around|budget(?:\s+is)?)[^\d₹]*₹?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(k|thousand)?/i
+  );
+
+  if (budgetMatch) {
+    let parsedBudget = Number(
+      budgetMatch[1].replace(/,/g, "")
+    );
+
+    const unit = budgetMatch[2]?.toLowerCase();
+
+    if (unit === "k" || unit === "thousand") {
+      parsedBudget *= 1000;
+    }
+
+    if (Number.isFinite(parsedBudget)) {
+      enforcedArguments.maxPrice = parsedBudget;
+    }
+  }
+
+  return enforcedArguments;
+}
+
+function isExplicitCartAddRequest(userMessage) {
+  const message = userMessage.trim().toLowerCase();
+
+  // Explicit cart wording
+  if (
+    /\b(add|put)\b.+\b(to|in|into)\b.+\b(cart|basket)\b/i.test(message)
+  ) {
+    return true;
+  }
+
+  // Explicit purchase wording
+  if (/\b(buy|purchase)\b/i.test(message)) {
+    return true;
+  }
+
+  // Short direct command:
+  // "Add ProBook X"
+  // "Add 3 ProBook X"
+  //
+  // Do NOT treat sentences like
+  // "tell me I can buy it"
+  // as authorization.
+  if (
+    /^(add|put)\s+(?:-?\d+(?:\.\d+)?\s+)?[a-z0-9][a-z0-9\s-]*$/i.test(
+      message
+    )
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function getRequestedQuantity(userMessage) {
+  const quantityMatch = userMessage.match(
+    /\b(?:add|buy|purchase|put)\s+(-?\d+(?:\.\d+)?)\b/i
+  );
+
+  if (!quantityMatch) {
+    return {
+      specified: false,
+      quantity: 1,
+    };
+  }
+
+  return {
+    specified: true,
+    quantity: Number(quantityMatch[1]),
+  };
+}
+
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message;
 
   const addToCartMatch =
     userMessage.match(
-      /\b(add|buy|purchase|put)\s+(\d+)\s+(.+?)\s+(?:to|in|into)\s+(?:my\s+)?(?:cart|basket)\b/i
+      /\b(add|buy|purchase|put)\s+(-?\d+(?:\.\d+)?)\s+(.+?)\s+(?:to|in|into)\s+(?:my\s+)?(?:cart|basket)\b/i
     );
-
   const wantsAddToCart =
     /\b(add|buy|purchase|put)\b.*\b(cart|basket)\b/i.test(
       userMessage
@@ -368,14 +465,74 @@ TOOL SEQUENCING RULES:
 
 
         if (toolName === "searchProducts") {
-          toolResult = searchProducts(toolArguments);
+          const safeSearchArguments = enforceSearchConstraints(
+            userMessage,
+            toolArguments
+          );
 
+          console.log(
+            "Original search arguments:",
+            toolArguments
+          );
+
+          console.log(
+            "Enforced search arguments:",
+            safeSearchArguments
+          );
+
+          toolResult = searchProducts(safeSearchArguments);
         } else if (toolName === "getProductDetails") {
           toolResult = getProductDetails(toolArguments);
 
         } else if (toolName === "addToCart") {
-          toolResult = addToCart(toolArguments);
+          const explicitlyAuthorized =
+            isExplicitCartAddRequest(userMessage);
 
+          if (!explicitlyAuthorized) {
+            console.log(
+              "Blocked addToCart: customer did not explicitly request a cart addition."
+            );
+
+            toolResult = {
+              success: false,
+              error:
+                "Cart addition is not authorized because the customer did not explicitly request adding or buying the product.",
+              blocked: true,
+            };
+          } else {
+            const requestedQuantity =
+              getRequestedQuantity(userMessage);
+
+            if (
+              requestedQuantity.specified &&
+              requestedQuantity.quantity <= 0
+            ) {
+              console.log(
+                "Blocked addToCart: invalid requested quantity:",
+                requestedQuantity.quantity
+              );
+
+              toolResult = {
+                success: false,
+                error:
+                  "Quantity must be greater than 0.",
+              };
+            } else {
+              const safeArguments = {
+                ...toolArguments,
+                quantity: requestedQuantity.specified
+                  ? requestedQuantity.quantity
+                  : 1,
+              };
+
+              console.log(
+                "Validated addToCart arguments:",
+                safeArguments
+              );
+
+              toolResult = addToCart(safeArguments);
+            }
+          }
         } else if (toolName === "getCart") {
           toolResult = getCart();
 
@@ -383,8 +540,35 @@ TOOL SEQUENCING RULES:
           toolResult = removeFromCart(toolArguments);
 
         } else if (toolName === "resolveProduct") {
-          toolResult = resolveProduct(toolArguments);
+          const productName = toolArguments.productName || "";
 
+          const isRecommendationRequest =
+            /\b(need|want|looking for|suggest|recommend|recommendation|something|option|options|which|best|cheapest)\b/i.test(
+              userMessage
+            ) &&
+            /\b(laptop|phone|monitor|accessory|audio|product|development|budget|under|around|below)\b/i.test(
+              userMessage
+            );
+
+          if (isRecommendationRequest) {
+            const safeSearchArguments = enforceSearchConstraints(
+              userMessage,
+              {}
+            );
+
+            console.log(
+              "Resolution blocked: recommendation request detected."
+            );
+
+            console.log(
+              "Fallback search arguments:",
+              safeSearchArguments
+            );
+
+            toolResult = searchProducts(safeSearchArguments);
+          } else {
+            toolResult = resolveProduct(toolArguments);
+          }
         } else if (toolName === "getProductAttribute") {
           toolResult = getProductAttribute(toolArguments);
 
@@ -438,7 +622,7 @@ TOOL SEQUENCING RULES:
               productId: toolResult.productId,
               quantity: requestedQuantity,
             });
-            
+
             console.log("Forced addToCart result:");
             console.dir(addResult, { depth: null });
 

@@ -161,7 +161,12 @@ High
 
 ### Status
 
-Found — Fix pending.
+Fixed — Regression test passed.
+
+### Regression Result
+
+Invalid quantities of 0 and negative values are rejected by the backend.
+A direct request without an explicit quantity defaults to quantity 1.
 
 
 ## Failure 5 — Empty Response
@@ -217,7 +222,9 @@ Critical
 
 ### Status
 
-Found — Fix pending.
+Fixed — Cart mutation blocked.
+
+
 
 
 ## Failure 7 — Laptop Constraint Lost
@@ -293,7 +300,25 @@ High
 
 ### Status
 
-Found — Fix pending.
+Fixed — Regression test passed.
+
+### Fix Applied
+
+Added backend enforcement for explicit search constraints and a fallback
+for recommendation requests that the LLM incorrectly routes to
+resolveProduct.
+
+The backend now reconstructs the customer's explicit category and budget
+constraints from the original user message before executing the search.
+
+### Regression Result
+
+The request correctly resulted in:
+
+- category = laptop
+- maxPrice = ₹50,000
+- UltraBook Y as the matching product
+- No non-laptop products returned
 
 
 
