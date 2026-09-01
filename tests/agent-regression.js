@@ -1,7 +1,14 @@
 const API_URL = "http://localhost:3000/api/chat";
 const RESET_CART_URL = "http://localhost:3000/api/test/reset-cart";
 
-async function chat(message) {
+let sessionCounter = 0;
+
+function createSessionId(prefix = "regression") {
+    sessionCounter += 1;
+    return `${prefix}-${Date.now()}-${sessionCounter}`;
+}
+
+async function chat(message, sessionId) {
     const response = await fetch(API_URL, {
         method: "POST",
         headers: {
@@ -9,6 +16,7 @@ async function chat(message) {
         },
         body: JSON.stringify({
             message,
+            sessionId,
         }),
     });
 
@@ -39,8 +47,9 @@ async function resetCart() {
 }
 
 async function runTest(name, message, check) {
+    const sessionId = createSessionId();
     try {
-        const result = await chat(message);
+        const result = await chat(message, sessionId);
 
         const passed = check(result);
 
@@ -64,12 +73,13 @@ async function runTest(name, message, check) {
 }
 
 async function runStatefulTest(name, steps, check) {
+    const sessionId = createSessionId("stateful");
     try {
         await resetCart();
         const results = [];
 
         for (const message of steps) {
-            const result = await chat(message);
+            const result = await chat(message, sessionId);
             results.push({
                 message,
                 result,
@@ -567,14 +577,23 @@ async function main() {
                     results[4].result.message || "";
 
                 const quantityIsTwo =
-                    /\b2\b/.test(afterAdds) &&
-                    afterAdds.includes("ProBook X") &&
-                    /₹110,000|INR\s*110,000|Rs\.?\s*110,000/i.test(afterAdds);
+                    /\b2\s+ProBook X\b/i.test(afterAdds);
 
-                const productStillThere =
-                    afterRemove.includes("ProBook X");
+                const correctTotal =
+                    /(?:₹|INR|Rs\.?)\s*(?:110,000|110000|1,10,000)\b/i.test(
+                        afterAdds
+                    );
 
-                return quantityIsTwo && !productStillThere;
+                const cartIsEmpty =
+                    /cart is currently empty|cart is empty/i.test(
+                        afterRemove
+                    );
+
+                return (
+                    quantityIsTwo &&
+                    correctTotal &&
+                    cartIsEmpty
+                );
             }
         )
     ) {

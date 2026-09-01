@@ -1,7 +1,13 @@
 const express = require("express");
 const cors = require("cors");
 const products = require("./data/products");
+
 const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, resolveProduct, getProductAttribute } = require("./tools/productTools");
+
+const {
+  getOrCreateSession,
+  clearSessions,
+} = require("./state/sessionStore");
 
 const app = express();
 
@@ -627,6 +633,30 @@ function hasCompleteSearchProductNames(responseText, searchResults) {
   });
 }
 
+function formatCartForCustomer(cartItems) {
+  if (!Array.isArray(cartItems) || cartItems.length === 0) {
+    return "Your cart is currently empty. Would you like to add any products?";
+  }
+
+  const lines = cartItems.map((item) => {
+    const price = `₹${item.price.toLocaleString("en-IN")}`;
+    const subtotal = `₹${item.subtotal.toLocaleString("en-IN")}`;
+
+    return `- ${item.quantity} ${item.name} — ${price} each — Subtotal: ${subtotal}`;
+  });
+
+  const total = cartItems.reduce(
+    (sum, item) => sum + item.subtotal,
+    0
+  );
+
+  return (
+    `Your cart contains:\n\n` +
+    lines.join("\n") +
+    `\n\nTotal: ₹${total.toLocaleString("en-IN")}`
+  );
+}
+
 
 // --------------------------------------------------
 // TEST-ONLY CART RESET
@@ -639,18 +669,26 @@ app.post("/api/test/reset-cart", (req, res) => {
     });
   }
 
-  const cart = require("./data/cart");
-
-  cart.length = 0;
+  clearSessions();
 
   return res.json({
     success: true,
-    message: "Test cart reset successfully",
+    message: "Test sessions reset successfully",
   });
 });
 
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message;
+
+  const sessionId = req.body.sessionId;
+
+  if (!sessionId || typeof sessionId !== "string") {
+    return res.status(400).json({
+      error: "A valid sessionId is required",
+    });
+  }
+
+  const session = getOrCreateSession(sessionId);
 
   if (isInternalInformationRequest(userMessage)) {
     console.log(
@@ -1456,6 +1494,7 @@ ${JSON.stringify(
               productId: cheapestProduct.id,
               productName: cheapestProduct.name,
               quantity: requestedQuantity,
+              cart: session.cart,
             });
 
             console.log(
@@ -1609,11 +1648,18 @@ ${JSON.stringify(
                 safeArguments
               );
 
-              toolResult = addToCart(safeArguments);
+              toolResult = addToCart({
+                ...safeArguments,
+                cart: session.cart,
+              });
             }
           }
         } else if (toolName === "getCart") {
-          toolResult = getCart();
+          toolResult = getCart(session.cart);
+
+          return res.json({
+            message: formatCartForCustomer(toolResult),
+          });
 
         } else if (toolName === "removeFromCart") {
           const safeRemoveArguments = {
@@ -1633,7 +1679,12 @@ ${JSON.stringify(
             safeRemoveArguments
           );
 
-          toolResult = removeFromCart(safeRemoveArguments);
+          toolResult = removeFromCart({
+            ...safeRemoveArguments,
+            cart: session.cart,
+          });
+
+
         } else if (toolName === "resolveProduct") {
           const productName = toolArguments.productName || "";
 
@@ -1707,8 +1758,18 @@ ${JSON.stringify(
           });
         }
 
-        // Give tool result back to Qwen
+        // Give tool result back to Qwen.
+        // Never expose merchant-internal product IDs to the model
+        // when they are not required to complete the customer's request.
         let toolContent = toolResult;
+
+        if (toolName === "getCart" && Array.isArray(toolResult)) {
+          toolContent = toolResult.map((item) => {
+            const { productId, ...customerSafeItem } = item;
+
+            return customerSafeItem;
+          });
+        }
 
         if (toolName === "resolveProduct") {
           if (toolResult.success) {
@@ -1852,6 +1913,7 @@ ${JSON.stringify(detailsResult.product, null, 2)}
             const addResult = addToCart({
               productId: toolResult.productId,
               quantity: requestedQuantity,
+              cart: session.cart,
             });
 
             console.log("Forced addToCart result:");
@@ -1892,6 +1954,7 @@ ${JSON.stringify(detailsResult.product, null, 2)}
 
             const removeResult = removeFromCart({
               productId: toolResult.productId,
+              cart: session.cart,
             });
 
             console.log("Forced removeFromCart result:");
