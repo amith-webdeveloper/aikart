@@ -301,6 +301,29 @@ function isExplicitCartAddRequest(userMessage) {
   );
 }
 
+function isExplicitCartRemoveRequest(userMessage) {
+  if (typeof userMessage !== "string") {
+    return false;
+  }
+
+  const message = userMessage.toLowerCase();
+
+  /*
+   * Explicit cart removal request.
+   *
+   * Examples:
+   * "remove ProBook X from my cart"
+   * "take ProBook X out of my cart"
+   * "delete ProBook X from my basket"
+   */
+  return (
+    /\b(remove|delete|take)\b.*\b(from|out of)\b.*\b(cart|basket)\b/i.test(
+      message
+    ) ||
+    /\b(remove|delete)\b.*\b(cart|basket)\b/i.test(message)
+  );
+}
+
 function getRequestedQuantity(userMessage) {
   const quantityMatch = userMessage.match(
     /\b(?:add|buy|purchase|put)\s+(-?\d+(?:\.\d+)?)\b/i
@@ -368,6 +391,25 @@ function isUnqualifiedMostStorageRequest(userMessage) {
     /\b(laptop|phone|monitor|keyboard|mouse|ssd|headphone|accessory)\b/.test(message);
 
   return !hasExplicitConstraint;
+}
+
+function extractProductInfoRequest(userMessage) {
+  if (typeof userMessage !== "string") {
+    return null;
+  }
+
+  const match = userMessage.match(
+    /^\s*(?:tell me about|what do you know about|give me information about|information about)\s+(.+?)\s*[?.!]*\s*$/i
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  return match[1]
+    .trim()
+    .replace(/[?.!]+$/, "")
+    .trim();
 }
 
 function isWorthItRequest(userMessage) {
@@ -458,6 +500,16 @@ function hasUnsupportedEvaluationClaim(responseText) {
     /\bbest option\b/i,
     /\bgood performance\b/i,
     /\bpowerful device\b/i,
+    /\bpowerful configuration\b/i,
+    /\bpowerful laptop\b/i,
+    /\bpowerful computer\b/i,
+    /\bpowerful specs\b/i,
+    /\bpowerful specifications\b/i,
+    /\bcapable laptop\b/i,
+    /\bcapable device\b/i,
+    /\bcapable computer\b/i,
+    /\bcapable configuration\b/i,
+    /\bwell[- ]rated\b/i,
     /\baverage range\b/i,
     /\bmedium[- ]to[- ]high[- ]end\b/i,
 
@@ -474,18 +526,28 @@ function hasUnsupportedEvaluationClaim(responseText) {
     /\bdepends on your specific needs\b/i,
     /\bdepends on your specific preferences\b/i,
     /\bdepends on your use case\b/i,
+    /\bcustomer preferences\b/i,
+    /\bcustomer requirements\b/i,
+    /\bbudget constraints\b/i,
+    /\bspecific use cases?\b/i,
+    /\bspecific uses cases?\b/i,
+    /\buse cases?\b/i,
 
     // Unsupported comparative/value reasoning
     /\bwithin the normal range\b/i,
-    /\bnormal price range\b/i,
-    /\bcompetitive with other\b/i,
-    /\bbetter than other\b/i,
-    /\bworse than other\b/i,
-    /\bworthwhile purchase\b/i,
-    /\bsolid choice\b/i,
-    /\bsolid laptop\b/i,
-    /\bcapable and reliable\b/i,
-    /\bwell[- ]rounded\b/i,
+    /bnormal price range\b/i,
+    /bcompetitive with other\b/i,
+    /bbetter than other\b/i,
+    /bworse than other\b/i,
+    /bworthwhile purchase\b/i,
+    /bsolid choice\b/i,
+    /bsolid laptop\b/i,
+    /bcapable and reliable\b/i,
+    /bwell[- ]rounded\b/i,
+    /breasonably priced\b/i,
+    /bwithin the range of other\b/i,
+    /bwithin the range of\b/i,
+    /bsimilar specifications\b/i,
 
     // Unsupported positive evaluation
     /\bthese are good specifications\b/i,
@@ -598,6 +660,179 @@ app.post("/api/chat", async (req, res) => {
     return res.json({
       message:
         "I can't provide internal product IDs, confidence scores, or other internal system information.",
+    });
+  }
+
+  // --------------------------------------------------
+  // DETERMINISTIC PRODUCT ATTRIBUTE LOOKUP
+  // --------------------------------------------------
+  //
+  // Do not rely on Qwen to correctly format tool calls for
+  // straightforward attribute questions. Resolve the product
+  // and query the merchant catalog directly.
+  //
+  const attributeMatch = userMessage.match(
+    /\b(?:what(?:'s| is)|tell me|give me|do you know|how much|how long)\b.*\b(battery life|battery|processor|ram|memory|storage|display|price|stock|rating|brand|touchscreen|gpu)\b.*\b(?:of|for|on)\b\s+(.+?)\??$/i
+  );
+
+  if (attributeMatch) {
+    const requestedAttribute = attributeMatch[1]
+      .toLowerCase()
+      .trim();
+
+    const requestedProductName = attributeMatch[2]
+      .trim()
+      .replace(/[?.!]+$/, "");
+
+    const attributeAliases = {
+      "battery life": "battery",
+      battery: "battery",
+      processor: "processor",
+      ram: "ram",
+      memory: "ram",
+      storage: "storage",
+      display: "display",
+      price: "price",
+      stock: "stock",
+      rating: "rating",
+      brand: "brand",
+      touchscreen: "touchscreen",
+      gpu: "gpu",
+    };
+
+    const attribute =
+      attributeAliases[requestedAttribute];
+
+    console.log(
+      "Deterministic attribute request:",
+      {
+        productName: requestedProductName,
+        attribute,
+      }
+    );
+
+    const resolutionResult = resolveProduct({
+      productName: requestedProductName,
+    });
+
+    console.log("Attribute resolution result:");
+    console.dir(resolutionResult, { depth: null });
+
+    if (!resolutionResult.success) {
+      return res.json({
+        message:
+          resolutionResult.error ||
+          `I couldn't find ${requestedProductName} in the merchant catalog.`,
+      });
+    }
+
+    const attributeResult = getProductAttribute({
+      productId: resolutionResult.productId,
+      attribute,
+    });
+
+    console.log("Attribute lookup result:");
+    console.dir(attributeResult, { depth: null });
+
+    if (!attributeResult.available) {
+      return res.json({
+        message:
+          attributeResult.customerAnswer ||
+          "That information is not available in the merchant catalog.",
+      });
+    }
+
+    return res.json({
+      message: attributeResult.customerAnswer,
+    });
+  }
+
+  // --------------------------------------------------
+  // DETERMINISTIC PRODUCT INFORMATION LOOKUP
+  // --------------------------------------------------
+  //
+  // When the customer asks about one specific product,
+  // resolve that product against the merchant catalog before
+  // allowing the LLM to choose a different interpretation.
+  //
+  const productInfoName =
+    extractProductInfoRequest(userMessage);
+
+  if (productInfoName) {
+    console.log(
+      "Deterministic product information request:",
+      productInfoName
+    );
+
+    const resolutionResult = resolveProduct({
+      productName: productInfoName,
+    });
+
+    console.log("Product information resolution:");
+    console.dir(resolutionResult, { depth: null });
+
+    if (!resolutionResult.success) {
+      return res.json({
+        message:
+          `I couldn't find "${productInfoName}" in the merchant catalog.`,
+      });
+    }
+
+    const detailsResult = getProductDetails({
+      productId: resolutionResult.productId,
+    });
+
+    console.log("Product information details:");
+    console.dir(detailsResult, { depth: null });
+
+    if (!detailsResult.success || !detailsResult.product) {
+      return res.json({
+        message:
+          "I couldn't retrieve the product information from the merchant catalog.",
+      });
+    }
+
+    const product = detailsResult.product;
+
+    const processor =
+      product.specifications?.processor;
+
+    const ram =
+      product.specifications?.ram;
+
+    const storage =
+      product.specifications?.storage;
+
+    const display =
+      product.specifications?.display;
+
+    const facts = [
+      `${product.name} is a ${product.category}.`,
+      processor
+        ? `It has an ${processor} processor.`
+        : null,
+      ram
+        ? `It has ${ram} RAM.`
+        : null,
+      storage
+        ? `It has ${storage}.`
+        : null,
+      display
+        ? `It has a ${display} display.`
+        : null,
+      typeof product.price === "number"
+        ? `It is priced at ₹${product.price.toLocaleString("en-IN")}.`
+        : null,
+      typeof product.rating === "number"
+        ? `Its catalog rating is ${product.rating}.`
+        : null,
+      typeof product.stock === "number"
+        ? `There are ${product.stock} units in stock.`
+        : null,
+    ].filter(Boolean);
+
+    return res.json({
+      message: facts.join(" "),
     });
   }
 
@@ -1639,7 +1874,49 @@ ${JSON.stringify(detailsResult.product, null, 2)}
                 addResult.error ||
                 `I couldn't add ${toolResult.productName} to your cart.`,
             });
+
+
           }
+
+          // The customer explicitly asked to remove the product.
+          // The product has already been resolved to a trusted catalog ID.
+          // Execute the removal directly instead of asking the LLM
+          // to decide what to do next.
+          if (
+            toolResult.success &&
+            isExplicitCartRemoveRequest(userMessage)
+          ) {
+            console.log(
+              "Original intent is REMOVE FROM CART. Continuing with removeFromCart."
+            );
+
+            const removeResult = removeFromCart({
+              productId: toolResult.productId,
+            });
+
+            console.log("Forced removeFromCart result:");
+            console.dir(removeResult, { depth: null });
+
+            messages.push({
+              role: "tool",
+              tool_call_id: toolCall.id,
+              content: JSON.stringify(toolContent),
+            });
+
+            if (removeResult.success) {
+              return res.json({
+                message:
+                  `${toolResult.productName} has been removed from your cart.`,
+              });
+            }
+
+            return res.json({
+              message:
+                removeResult.error ||
+                `I couldn't remove ${toolResult.productName} from your cart.`,
+            });
+          }
+
         }
 
         messages.push({

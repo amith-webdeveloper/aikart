@@ -567,7 +567,9 @@ async function main() {
                     results[4].result.message || "";
 
                 const quantityIsTwo =
-                    /\b2\s+in\s+(?:total|quantity)\b/i.test(afterAdds);
+                    /\b2\b/.test(afterAdds) &&
+                    afterAdds.includes("ProBook X") &&
+                    /₹110,000|INR\s*110,000|Rs\.?\s*110,000/i.test(afterAdds);
 
                 const productStillThere =
                     afterRemove.includes("ProBook X");
@@ -580,6 +582,101 @@ async function main() {
     } else {
         failed++;
     }
+
+    // --------------------------------------------------
+    // 19. PRODUCT RESOLUTION — CASE INSENSITIVE
+    // --------------------------------------------------
+
+    if (
+        await runTest(
+            "Lowercase product name resolves correctly",
+            "Tell me about probook x",
+            (result) => {
+                const message = result.message || "";
+
+                return (
+                    message.includes("ProBook X") &&
+                    message.includes("55,000")
+                );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+    // --------------------------------------------------
+    // 20. PRODUCT RESOLUTION — UPPERCASE
+    // --------------------------------------------------
+
+    if (
+        await runTest(
+            "Uppercase product name resolves correctly",
+            "Tell me about PROBOOK X",
+            (result) => {
+                const message = result.message || "";
+
+                return (
+                    message.includes("ProBook X") &&
+                    message.includes("55,000")
+                );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+    // --------------------------------------------------
+    // 21. PRODUCT RESOLUTION — TYPO
+    // --------------------------------------------------
+
+    if (
+        await runTest(
+            "Obvious product typo resolves correctly",
+            "Tell me about ProBok X",
+            (result) => {
+                const message = result.message || "";
+
+                return (
+                    message.includes("ProBook X") &&
+                    message.includes("55,000")
+                );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+    // --------------------------------------------------
+    // 22. PRODUCT RESOLUTION — UNKNOWN PRODUCT
+    // --------------------------------------------------
+
+    if (
+        await runTest(
+            "Unknown product is not falsely resolved",
+            "Tell me about SuperLaptop 9000",
+            (result) => {
+                const message = result.message || "";
+
+                return (
+                    !message.includes("ProBook X") &&
+                    !message.includes("UltraBook Y") &&
+                    !message.includes("DevBook Z")
+                );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+
 
 
     // --------------------------------------------------
