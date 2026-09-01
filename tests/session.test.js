@@ -130,3 +130,74 @@ test("removing from one session does not affect another session", () => {
         "ProBook X"
     );
 });
+
+
+test("preserves conversation history within the same session", () => {
+    clearSessions();
+
+    const session = getOrCreateSession("conversation-a");
+
+    session.messages.push({
+        role: "user",
+        content: "Tell me about ProBook X",
+    });
+
+    session.messages.push({
+        role: "assistant",
+        content: "ProBook X is a laptop with 16GB RAM and 512GB SSD.",
+    });
+
+    const sameSession =
+        getOrCreateSession("conversation-a");
+
+    assert.equal(
+        sameSession.messages.length,
+        2
+    );
+
+    assert.equal(
+        sameSession.messages[0].role,
+        "user"
+    );
+
+    assert.equal(
+        sameSession.messages[0].content,
+        "Tell me about ProBook X"
+    );
+
+    assert.equal(
+        sameSession.messages[1].role,
+        "assistant"
+    );
+});
+
+test("conversation history is isolated between sessions", () => {
+    clearSessions();
+
+    const sessionA =
+        getOrCreateSession("conversation-a");
+
+    const sessionB =
+        getOrCreateSession("conversation-b");
+
+    sessionA.messages.push({
+        role: "user",
+        content: "Tell me about ProBook X",
+    });
+
+    sessionA.messages.push({
+        role: "assistant",
+        content: "ProBook X is a laptop.",
+    });
+
+    assert.equal(
+        sessionA.messages.length,
+        2
+    );
+
+    assert.equal(
+        sessionB.messages.length,
+        0
+    );
+});
+
