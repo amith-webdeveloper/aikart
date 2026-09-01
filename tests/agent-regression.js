@@ -603,7 +603,79 @@ async function main() {
     }
 
     // --------------------------------------------------
-    // 19. PRODUCT RESOLUTION — CASE INSENSITIVE
+    // 19. CONVERSATION HISTORY
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Conversation history is preserved within a session",
+            [
+                "Remember this test phrase: BLUE-ORBIT.",
+                "What was the test phrase I told you to remember?",
+            ],
+            (results) => {
+                const answer =
+                    results[1].result.message || "";
+
+                return /BLUE-ORBIT/i.test(answer);
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+    // --------------------------------------------------
+    // 20. CONVERSATION ISOLATION
+    // --------------------------------------------------
+
+    try {
+        const sessionA = createSessionId("conversation-a");
+        const sessionB = createSessionId("conversation-b");
+
+        await chat(
+            "Remember this test phrase: BLUE-ORBIT.",
+            sessionA
+        );
+
+        const result = await chat(
+            "What was the test phrase I told you to remember?",
+            sessionB
+        );
+
+        const answer =
+            result.message || "";
+
+        const leaked =
+            /BLUE-ORBIT/i.test(answer);
+
+        if (!leaked) {
+            console.log(
+                "✓ Conversation history is isolated between sessions"
+            );
+            passed++;
+        } else {
+            console.log(
+                "✗ Conversation history is isolated between sessions"
+            );
+            console.log("  Session B leaked Session A history.");
+            console.log("  Actual:", result);
+            failed++;
+        }
+    } catch (error) {
+        console.log(
+            "✗ Conversation history is isolated between sessions"
+        );
+        console.log("  Error:", error.message);
+        failed++;
+    }
+
+
+
+
+    // --------------------------------------------------
+    // 21. PRODUCT RESOLUTION — CASE INSENSITIVE
     // --------------------------------------------------
 
     if (
@@ -626,7 +698,7 @@ async function main() {
     }
 
     // --------------------------------------------------
-    // 20. PRODUCT RESOLUTION — UPPERCASE
+    // 22. PRODUCT RESOLUTION — UPPERCASE
     // --------------------------------------------------
 
     if (
@@ -649,7 +721,7 @@ async function main() {
     }
 
     // --------------------------------------------------
-    // 21. PRODUCT RESOLUTION — TYPO
+    // 23. PRODUCT RESOLUTION — TYPO
     // --------------------------------------------------
 
     if (
@@ -672,7 +744,7 @@ async function main() {
     }
 
     // --------------------------------------------------
-    // 22. PRODUCT RESOLUTION — UNKNOWN PRODUCT
+    // 24. PRODUCT RESOLUTION — UNKNOWN PRODUCT
     // --------------------------------------------------
 
     if (
