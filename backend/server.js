@@ -657,6 +657,18 @@ function formatCartForCustomer(cartItems) {
   );
 }
 
+function addConversationTurn(session, userMessage, assistantMessage) {
+  session.messages.push({
+    role: "user",
+    content: userMessage,
+  });
+
+  session.messages.push({
+    role: "assistant",
+    content: assistantMessage,
+  });
+}
+
 
 // --------------------------------------------------
 // TEST-ONLY CART RESET
@@ -773,15 +785,31 @@ app.post("/api/chat", async (req, res) => {
     console.dir(attributeResult, { depth: null });
 
     if (!attributeResult.available) {
+      const answer =
+        attributeResult.customerAnswer ||
+        "That information is not available in the merchant catalog.";
+
+      addConversationTurn(
+        session,
+        userMessage,
+        answer
+      );
+
       return res.json({
-        message:
-          attributeResult.customerAnswer ||
-          "That information is not available in the merchant catalog.",
+        message: answer,
       });
     }
 
+    const answer = attributeResult.customerAnswer;
+
+    addConversationTurn(
+      session,
+      userMessage,
+      answer
+    );
+
     return res.json({
-      message: attributeResult.customerAnswer,
+      message: answer,
     });
   }
 
@@ -869,8 +897,16 @@ app.post("/api/chat", async (req, res) => {
         : null,
     ].filter(Boolean);
 
+    const answer = facts.join(" ");
+
+    addConversationTurn(
+      session,
+      userMessage,
+      answer
+    );
+
     return res.json({
-      message: facts.join(" "),
+      message: answer,
     });
   }
 
@@ -1023,6 +1059,7 @@ TOOL SEQUENCING RULES:
 - Do not perform an action the customer did not request.
 `,
     },
+    ...session.messages,
     {
       role: "user",
       content: userMessage,
@@ -1391,6 +1428,12 @@ ${JSON.stringify(
         console.log("Final AI response:");
         console.log(finalAnswer);
 
+        addConversationTurn(
+          session,
+          userMessage,
+          finalAnswer
+        );
+
         return res.json({
           message: finalAnswer,
         });
@@ -1657,8 +1700,16 @@ ${JSON.stringify(
         } else if (toolName === "getCart") {
           toolResult = getCart(session.cart);
 
+          const answer = formatCartForCustomer(toolResult);
+
+          addConversationTurn(
+            session,
+            userMessage,
+            answer
+          );
+
           return res.json({
-            message: formatCartForCustomer(toolResult),
+            message: answer,
           });
 
         } else if (toolName === "removeFromCart") {
