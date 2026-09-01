@@ -6,6 +6,7 @@ function createSession(sessionId) {
         messages: [],
         lastSearchResults: [],
         selectedProductId: null,
+        cart: [],
     };
 }
 

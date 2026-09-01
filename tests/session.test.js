@@ -54,3 +54,79 @@ test("deletes a session", () => {
         null
     );
 });
+
+
+test("cart can be isolated between sessions", () => {
+    clearSessions();
+
+    const sessionA = getOrCreateSession("session-a");
+    const sessionB = getOrCreateSession("session-b");
+
+    sessionA.cart = [];
+    sessionB.cart = [];
+
+    const {
+        addToCart,
+        getCart,
+    } = require("../backend/tools/productTools");
+
+    const addResult = addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: sessionA.cart,
+    });
+
+    assert.equal(addResult.success, true);
+
+    const cartA = getCart(sessionA.cart);
+    const cartB = getCart(sessionB.cart);
+
+    assert.equal(cartA.length, 1);
+    assert.equal(cartA[0].name, "ProBook X");
+    assert.equal(cartA[0].quantity, 1);
+
+    assert.equal(cartB.length, 0);
+});
+
+test("removing from one session does not affect another session", () => {
+    clearSessions();
+
+    const sessionA = getOrCreateSession("session-a");
+    const sessionB = getOrCreateSession("session-b");
+
+    sessionA.cart = [];
+    sessionB.cart = [];
+
+    const {
+        addToCart,
+        getCart,
+        removeFromCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: sessionA.cart,
+    });
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: sessionB.cart,
+    });
+
+    const removeResult = removeFromCart({
+        productName: "ProBook X",
+        cart: sessionA.cart,
+    });
+
+    assert.equal(removeResult.success, true);
+
+    assert.equal(getCart(sessionA.cart).length, 0);
+
+    assert.equal(getCart(sessionB.cart).length, 1);
+    assert.equal(
+        getCart(sessionB.cart)[0].name,
+        "ProBook X"
+    );
+});

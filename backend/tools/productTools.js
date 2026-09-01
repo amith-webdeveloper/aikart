@@ -1,5 +1,5 @@
 const products = require("../data/products");
-const cart = require("../data/cart");
+const defaultCart = require("../data/cart");
 const stringSimilarity = require("string-similarity");
 
 function searchProducts({ category, maxPrice }) {
@@ -151,7 +151,12 @@ function getProductAttribute({
     };
 }
 
-function addToCart({ productName, productId, quantity = 1 }) {
+function addToCart({
+    productName,
+    productId,
+    quantity = 1,
+    cart = defaultCart,
+}) {
     let product;
 
     if (productId) {
@@ -159,15 +164,18 @@ function addToCart({ productName, productId, quantity = 1 }) {
             (product) => product.id === productId
         );
     } else if (productName) {
-        const resolved = resolveProduct(productName);
+        const resolved = resolveProduct({
+            productName,
+        });
 
         if (!resolved.success) {
             return resolved;
         }
 
-        product = resolved.product;
+        product = products.find(
+            (item) => item.id === resolved.productId
+        );
     }
-
     if (!product) {
         return {
             success: false,
@@ -222,7 +230,7 @@ function addToCart({ productName, productId, quantity = 1 }) {
     };
 }
 
-function getCart() {
+function getCart(cart = defaultCart) {
     return cart.map((item) => {
         const product = products.find(
             (product) => product.id === item.productId
@@ -238,7 +246,11 @@ function getCart() {
     });
 }
 
-function removeFromCart({ productId, productName }) {
+function removeFromCart({
+    productId,
+    productName,
+    cart = defaultCart,
+}) {
     let resolvedProductId = productId;
 
     // If the AI provides a product name instead of an ID,
