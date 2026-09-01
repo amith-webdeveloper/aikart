@@ -377,8 +377,9 @@ async function main() {
 
                 return (
                     cartResponse.includes("ProBook X") &&
-                    cartResponse.includes("₹55,000") &&
-                    !cartResponse.includes("₹1")
+                    /(₹|Rs\.)\s*55,000/i.test(cartResponse) &&
+                    !cartResponse.includes("₹1") &&
+                    !/Rs\.\s*1\b/i.test(cartResponse)
                 );
             }
         )
@@ -535,6 +536,43 @@ async function main() {
                     cartResponse.includes("ProBook X") &&
                     !cartResponse.includes("11")
                 );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+
+    // --------------------------------------------------
+    // 18. CART STATE — ADD, INCREMENT, REMOVE
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Cart state remains consistent across add and remove operations",
+            [
+                "Add 1 ProBook X to my cart.",
+                "Add 1 more ProBook X to my cart.",
+                "Show me my cart",
+                "Remove ProBook X from my cart.",
+                "Show me my cart",
+            ],
+            (results) => {
+                const afterAdds =
+                    results[2].result.message || "";
+
+                const afterRemove =
+                    results[4].result.message || "";
+
+                const quantityIsTwo =
+                    /\b2\s+in\s+(?:total|quantity)\b/i.test(afterAdds);
+
+                const productStillThere =
+                    afterRemove.includes("ProBook X");
+
+                return quantityIsTwo && !productStillThere;
             }
         )
     ) {
