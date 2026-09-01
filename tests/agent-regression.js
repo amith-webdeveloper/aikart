@@ -585,7 +585,7 @@ async function main() {
                     );
 
                 const cartIsEmpty =
-                    /cart is currently empty|cart is empty/i.test(
+                    /cart is currently empty|cart is empty|no products/i.test(
                         afterRemove
                     );
 

@@ -231,19 +231,22 @@ function addToCart({
 }
 
 function getCart(cart = defaultCart) {
-    return cart.map((item) => {
-        const product = products.find(
-            (product) => product.id === item.productId
-        );
+    return cart
+        .filter((item) => item.quantity > 0)
+        .map((item) => {
+            const product = products.find(
+                (product) => product.id === item.productId
+            );
 
-        return {
-            productId: item.productId,
-            name: product?.name || "Unknown product",
-            price: product?.price || 0,
-            quantity: item.quantity,
-            subtotal: (product?.price || 0) * item.quantity,
-        };
-    });
+            return {
+                productId: item.productId,
+                name: product?.name || "Unknown product",
+                price: product?.price || 0,
+                quantity: item.quantity,
+                subtotal:
+                    (product?.price || 0) * item.quantity,
+            };
+        });
 }
 
 function removeFromCart({
