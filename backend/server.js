@@ -330,6 +330,16 @@ function isExplicitCartRemoveRequest(userMessage) {
   );
 }
 
+function isContextualProductReference(userMessage) {
+  if (typeof userMessage !== "string") {
+    return false;
+  }
+
+  return /\b(that one|that product|this one|this product|the one)\b/i.test(
+    userMessage
+  );
+}
+
 function getRequestedQuantity(userMessage) {
   const quantityMatch = userMessage.match(
     /\b(?:add|buy|purchase|put)\s+(-?\d+(?:\.\d+)?)\b/i
@@ -999,11 +1009,72 @@ app.post("/api/chat", async (req, res) => {
       }
     );
 
+    session.selectedProductId = mostStorageProduct.product.id;
+
     return sendChatResponse(
       res,
       session,
       userMessage,
       `${mostStorageProduct.product.name} has the most storage with ${mostStorageProduct.product.specifications.storage}.`
+    );
+  }
+
+
+  const wantsContextualAdd =
+    isExplicitCartAddRequest(userMessage) &&
+    isContextualProductReference(userMessage);
+
+  if (wantsContextualAdd) {
+    console.log("Contextual cart add request detected.");
+
+    if (!session.selectedProductId) {
+      return sendChatResponse(
+        res,
+        session,
+        userMessage,
+        "I don't have a previously selected product to add. Please specify the product name."
+      );
+    }
+
+    const quantity = getRequestedQuantity(userMessage);
+
+    if (
+      quantity.specified &&
+      (!Number.isInteger(quantity.quantity) ||
+        quantity.quantity <= 0)
+    ) {
+      return sendChatResponse(
+        res,
+        session,
+        userMessage,
+        "Quantity must be a positive whole number."
+      );
+    }
+
+    const addResult = addToCart({
+      productId: session.selectedProductId,
+      quantity: quantity.quantity,
+      cart: session.cart,
+    });
+
+    console.log("Contextual cart add result:");
+    console.dir(addResult, { depth: null });
+
+    if (!addResult.success) {
+      return sendChatResponse(
+        res,
+        session,
+        userMessage,
+        addResult.error ||
+        "I couldn't add the selected product to your cart."
+      );
+    }
+
+    return sendChatResponse(
+      res,
+      session,
+      userMessage,
+      `${addResult.item.name} has been added to your cart.`
     );
   }
 
@@ -1763,6 +1834,10 @@ ${JSON.stringify(
             ? toolResult
             : null;
 
+          session.lastSearchResults = Array.isArray(toolResult)
+            ? toolResult
+            : [];
+
           /*
            * DETERMINISTIC CHEAPEST-PRODUCT SELECTION
            *
@@ -1909,6 +1984,8 @@ ${JSON.stringify(
 
             const selectedProduct =
               mostStorageProduct.product;
+
+            session.selectedProductId = selectedProduct.id;
 
             const selectedStorage =
               selectedProduct.specifications?.storage ||

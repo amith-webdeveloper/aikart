@@ -671,11 +671,115 @@ async function main() {
         failed++;
     }
 
+    // --------------------------------------------------
+    // 21. CONTEXTUAL PRODUCT REFERENCE
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Contextual product reference resolves selected product",
+            [
+                "Which laptop has the most storage?",
+                "Add that one to my cart.",
+            ],
+            (results) => {
+                const firstResponse =
+                    results[0].result.message || "";
+                const secondResponse =
+                    results[1].result.message || "";
+
+                return (
+                    firstResponse.includes("UltraBook Y") &&
+                    secondResponse.toLowerCase().includes("ultrabook y") &&
+                    secondResponse.toLowerCase().includes("cart")
+                );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+    // --------------------------------------------------
+    // 22. CONTEXTUAL REFERENCE DOES NOT LEAK BETWEEN SESSIONS
+    // --------------------------------------------------
+
+    try {
+        const sessionA = createSessionId("context-a");
+        const sessionB = createSessionId("context-b");
+
+        await resetCart();
+
+        await chat(
+            "Which laptop has the most storage?",
+            sessionA
+        );
+
+        const result = await chat(
+            "Add that one to my cart.",
+            sessionB
+        );
+
+        const message =
+            result.message || "";
+
+        const leaked =
+            message.toLowerCase().includes("ultrabook y") &&
+            message.toLowerCase().includes("cart");
+
+        if (!leaked) {
+            console.log(
+                "✓ Contextual product reference is isolated between sessions"
+            );
+            passed++;
+        } else {
+            console.log(
+                "✗ Contextual product reference is isolated between sessions"
+            );
+            console.log(
+                "  Session B incorrectly inherited Session A's selected product."
+            );
+            console.log("  Actual:", result);
+            failed++;
+        }
+    } catch (error) {
+        console.log(
+            "✗ Contextual product reference is isolated between sessions"
+        );
+        console.log("  Error:", error.message);
+        failed++;
+    }
+
+    // --------------------------------------------------
+    // 23. EXPLICIT PRODUCT NAME STILL WORKS
+    // --------------------------------------------------
+
+    if (
+        await runTest(
+            "Explicit product reference still resolves correctly",
+            "Add UltraBook Y to my cart.",
+            (result) => {
+                const message =
+                    result.message || "";
+
+                return (
+                    message.toLowerCase().includes("ultrabook y") &&
+                    message.toLowerCase().includes("cart")
+                );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
 
 
 
     // --------------------------------------------------
-    // 21. PRODUCT RESOLUTION — CASE INSENSITIVE
+    // 24. PRODUCT RESOLUTION — CASE INSENSITIVE
     // --------------------------------------------------
 
     if (
@@ -698,7 +802,7 @@ async function main() {
     }
 
     // --------------------------------------------------
-    // 22. PRODUCT RESOLUTION — UPPERCASE
+    // 25. PRODUCT RESOLUTION — UPPERCASE
     // --------------------------------------------------
 
     if (
@@ -721,7 +825,7 @@ async function main() {
     }
 
     // --------------------------------------------------
-    // 23. PRODUCT RESOLUTION — TYPO
+    // 26. PRODUCT RESOLUTION — TYPO
     // --------------------------------------------------
 
     if (
@@ -744,7 +848,7 @@ async function main() {
     }
 
     // --------------------------------------------------
-    // 24. PRODUCT RESOLUTION — UNKNOWN PRODUCT
+    // 27. PRODUCT RESOLUTION — UNKNOWN PRODUCT
     // --------------------------------------------------
 
     if (
