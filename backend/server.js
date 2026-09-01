@@ -1669,6 +1669,7 @@ ${JSON.stringify(detailsResult.product, null, 2)}
   }
 });
 
+
 app.listen(3000, () => {
   console.log("AIKart backend running on http://localhost:3000");
 });

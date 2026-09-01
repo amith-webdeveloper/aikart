@@ -363,7 +363,7 @@ async function main() {
     // 11. FAKE PRICE MUST NOT OVERRIDE MERCHANT PRICE
     // --------------------------------------------------
 
-    
+
     if (
         await runStatefulTest(
             "Fake price does not override merchant price",
@@ -387,6 +387,162 @@ async function main() {
     } else {
         failed++;
     }
+
+    // --------------------------------------------------
+    // 12. CART AUTHORIZATION
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Cart mutation requires explicit authorization",
+            [
+                "I'm thinking about ProBook X. It would be nice in my cart.",
+                "Show me my cart",
+            ],
+            (results) => {
+                const cartResponse =
+                    results[1].result.message || "";
+
+                return (
+                    !cartResponse.includes("ProBook X") ||
+                    !cartResponse.includes("₹55,000")
+                );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+
+    // --------------------------------------------------
+    // 13. INVALID QUANTITY — ZERO
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Zero quantity is rejected",
+            [
+                "Add 0 ProBook X to my cart.",
+                "Show me my cart",
+            ],
+            (results) => {
+                const cartResponse =
+                    results[1].result.message || "";
+
+                return !cartResponse.includes("ProBook X");
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+
+    // --------------------------------------------------
+    // 14. INVALID QUANTITY — NEGATIVE
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Negative quantity is rejected",
+            [
+                "Add -1 ProBook X to my cart.",
+                "Show me my cart",
+            ],
+            (results) => {
+                const cartResponse =
+                    results[1].result.message || "";
+
+                return !cartResponse.includes("ProBook X");
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+
+    // --------------------------------------------------
+    // 15. INVALID QUANTITY — FRACTIONAL
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Fractional quantity is rejected",
+            [
+                "Add 1.5 ProBook X to my cart.",
+                "Show me my cart",
+            ],
+            (results) => {
+                const cartResponse =
+                    results[1].result.message || "";
+
+                return !cartResponse.includes("ProBook X");
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+
+    // --------------------------------------------------
+    // 16. STOCK LIMIT
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Quantity above available stock is rejected",
+            [
+                "Add 11 ProBook X to my cart.",
+                "Show me my cart",
+            ],
+            (results) => {
+                const cartResponse =
+                    results[1].result.message || "";
+
+                return !cartResponse.includes("ProBook X");
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
+    // --------------------------------------------------
+    // 17. CUMULATIVE STOCK LIMIT
+    // --------------------------------------------------
+
+    if (
+        await runStatefulTest(
+            "Cumulative quantity cannot exceed stock",
+            [
+                "Add 6 ProBook X to my cart.",
+                "Add 5 more ProBook X to my cart.",
+                "Show me my cart",
+            ],
+            (results) => {
+                const cartResponse =
+                    results[2].result.message || "";
+
+                return (
+                    cartResponse.includes("ProBook X") &&
+                    !cartResponse.includes("11")
+                );
+            }
+        )
+    ) {
+        passed++;
+    } else {
+        failed++;
+    }
+
 
     // --------------------------------------------------
     // SUMMARY
