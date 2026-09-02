@@ -40,6 +40,28 @@ function transitionPayment(payment, nextStatus) {
     );
 }
 
+function failPaymentForSession(session) {
+    if (!session || !session.payment) {
+        throw new Error("No active payment");
+    }
+
+    return transitionPayment(
+        session.payment,
+        "failed"
+    );
+}
+
+function cancelPaymentForSession(session) {
+    if (!session || !session.payment) {
+        throw new Error("No active payment");
+    }
+
+    return transitionPayment(
+        session.payment,
+        "cancelled"
+    );
+}
+
 async function verifyPaymentForSession(
     session,
     paymentId,
@@ -89,5 +111,7 @@ async function verifyPaymentForSession(
 module.exports = {
     createPaymentState,
     transitionPayment,
+    failPaymentForSession,
+    cancelPaymentForSession,
     verifyPaymentForSession
 };

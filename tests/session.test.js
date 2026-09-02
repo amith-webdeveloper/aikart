@@ -398,6 +398,24 @@ test("payment can transition from created to failed", () => {
     assert.equal(result.status, "failed");
 });
 
+test("marks the session payment as failed", () => {
+    const session = {
+        payment: createPaymentState({
+            id: "order_test_123",
+            amount: 10000,
+        }),
+    };
+
+    const {
+        failPaymentForSession,
+    } = require("../backend/payments/paymentService");
+
+    const result = failPaymentForSession(session);
+
+    assert.equal(result.status, "failed");
+    assert.equal(session.payment.status, "failed");
+});
+
 test("payment can transition from created to cancelled", () => {
     const payment = createPaymentState({
         id: "order_test_123",
@@ -712,6 +730,56 @@ test("invalid payment verification does not mark payment as paid", async () => {
     );
 });
 
+test("failed payment cannot be verified as paid", async () => {
+    const session = {
+        payment: {
+            status: "failed",
+            razorpayOrderId: "order_test_123",
+            amount: 10000,
+        },
+    };
+
+    await assert.rejects(
+        () =>
+            verifyPaymentForSession(
+                session,
+                "pay_test_123",
+                "signature"
+            ),
+        /no longer awaiting verification/i
+    );
+
+    assert.equal(
+        session.payment.status,
+        "failed"
+    );
+});
+
+test("cancelled payment cannot be verified as paid", async () => {
+    const session = {
+        payment: {
+            status: "cancelled",
+            razorpayOrderId: "order_test_123",
+            amount: 10000,
+        },
+    };
+
+    await assert.rejects(
+        () =>
+            verifyPaymentForSession(
+                session,
+                "pay_test_123",
+                "signature"
+            ),
+        /no longer awaiting verification/i
+    );
+
+    assert.equal(
+        session.payment.status,
+        "cancelled"
+    );
+});
+
 test("payment verification rejects a session without an active payment", async () => {
     const session = {
         payment: null,
@@ -1001,6 +1069,431 @@ test("payment creation rejects an existing active payment", async () => {
                 razorpayOrderId: "order_existing_123",
                 amount: 10000,
             }
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment creation creates a new payment after a failed payment", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-retry-failed"
+    );
+
+    session.checkout = {
+        status: "confirmed",
+        items: [
+            {
+                productId: "prod_1",
+                name: "Test Product",
+                quantity: 1,
+                unitPrice: 100,
+                subtotal: 100,
+            },
+        ],
+        total: 100,
+        cartVersion: 0,
+    };
+
+    session.payment = {
+        status: "failed",
+        razorpayOrderId: "order_failed_123",
+        amount: 10000,
+    };
+
+    const originalCreate =
+        razorpay.orders.create;
+
+    razorpay.orders.create = async (options) => {
+        assert.deepEqual(
+            options,
+            {
+                amount: 10000,
+                currency: "INR",
+            }
+        );
+
+        return {
+            id: "order_retry_123",
+            amount: 10000,
+            currency: "INR",
+            status: "created",
+        };
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/create`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-retry-failed",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 200);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                success: true,
+                payment: {
+                    status: "created",
+                    razorpayOrderId: "order_retry_123",
+                    amount: 10000,
+                },
+            }
+        );
+
+        assert.deepEqual(
+            session.payment,
+            {
+                status: "created",
+                razorpayOrderId: "order_retry_123",
+                amount: 10000,
+            }
+        );
+    } finally {
+        server.close();
+        razorpay.orders.create =
+            originalCreate;
+    }
+});
+
+test("payment creation creates a new payment after a cancelled payment", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-retry-cancelled"
+    );
+
+    session.checkout = {
+        status: "confirmed",
+        items: [
+            {
+                productId: "prod_1",
+                name: "Test Product",
+                quantity: 1,
+                unitPrice: 100,
+                subtotal: 100,
+            },
+        ],
+        total: 100,
+        cartVersion: 0,
+    };
+
+    session.payment = {
+        status: "cancelled",
+        razorpayOrderId: "order_cancelled_123",
+        amount: 10000,
+    };
+
+    const originalCreate =
+        razorpay.orders.create;
+
+    razorpay.orders.create = async (options) => {
+        assert.deepEqual(
+            options,
+            {
+                amount: 10000,
+                currency: "INR",
+            }
+        );
+
+        return {
+            id: "order_retry_cancelled_123",
+            amount: 10000,
+            currency: "INR",
+            status: "created",
+        };
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/create`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-retry-cancelled",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 200);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                success: true,
+                payment: {
+                    status: "created",
+                    razorpayOrderId: "order_retry_cancelled_123",
+                    amount: 10000,
+                },
+            }
+        );
+
+        assert.deepEqual(
+            session.payment,
+            {
+                status: "created",
+                razorpayOrderId: "order_retry_cancelled_123",
+                amount: 10000,
+            }
+        );
+    } finally {
+        server.close();
+        razorpay.orders.create =
+            originalCreate;
+    }
+});
+
+test("payment creation does not store payment state when Razorpay order creation fails", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-create-razorpay-failure"
+    );
+
+    session.checkout = {
+        status: "confirmed",
+        items: [
+            {
+                productId: "prod_1",
+                name: "Test Product",
+                quantity: 1,
+                unitPrice: 100,
+                subtotal: 100,
+            },
+        ],
+        total: 100,
+        cartVersion: 0,
+    };
+
+    const originalCreate =
+        razorpay.orders.create;
+
+    razorpay.orders.create = async () => {
+        throw new Error(
+            "Razorpay order creation failed"
+        );
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/create`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId:
+                        "payment-create-razorpay-failure",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 400);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                error:
+                    "Razorpay order creation failed",
+            }
+        );
+
+        assert.equal(
+            session.payment,
+            null
+        );
+    } finally {
+        server.close();
+        razorpay.orders.create =
+            originalCreate;
+    }
+});
+
+test("payment cancellation marks the active payment as cancelled", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-http-cancel"
+    );
+
+    session.payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/cancel`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-http-cancel",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 200);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                success: true,
+                payment: {
+                    status: "cancelled",
+                    razorpayOrderId: "order_test_123",
+                    amount: 10000,
+                },
+            }
+        );
+
+        assert.equal(
+            session.payment.status,
+            "cancelled"
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment cancellation rejects a payment that is already paid", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-http-cancel-paid"
+    );
+
+    session.payment = {
+        status: "paid",
+        razorpayOrderId: "order_test_123",
+        amount: 10000,
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/cancel`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-http-cancel-paid",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 400);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                error:
+                    "Invalid payment transition: paid -> cancelled",
+            }
+        );
+
+        assert.equal(
+            session.payment.status,
+            "paid"
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment cancellation rejects a session without an active payment", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-http-cancel-none"
+    );
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/cancel`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-http-cancel-none",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 400);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                error: "No active payment",
+            }
+        );
+
+        assert.equal(
+            session.payment,
+            null
         );
     } finally {
         server.close();

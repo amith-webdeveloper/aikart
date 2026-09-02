@@ -18,6 +18,8 @@ const {
 
 const {
   createPaymentState,
+  failPaymentForSession,
+  cancelPaymentForSession,
   verifyPaymentForSession,
 } = require("./payments/paymentService");
 
@@ -805,6 +807,37 @@ app.post("/api/payment/create", async (req, res) => {
     const payment = createPaymentState(order);
 
     session.payment = payment;
+
+    return res.status(200).json({
+      success: true,
+      payment,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
+app.post("/api/payment/cancel", (req, res) => {
+  const { sessionId } = req.body;
+
+  if (!sessionId || typeof sessionId !== "string") {
+    return res.status(400).json({
+      error: "A valid sessionId is required",
+    });
+  }
+
+  const session = getSession(sessionId);
+
+  if (!session) {
+    return res.status(404).json({
+      error: "Session not found",
+    });
+  }
+
+  try {
+    const payment = cancelPaymentForSession(session);
 
     return res.status(200).json({
       success: true,
