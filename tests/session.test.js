@@ -201,3 +201,69 @@ test("conversation history is isolated between sessions", () => {
     );
 });
 
+test("new sessions start without an active checkout", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-a");
+
+    assert.equal(
+        session.checkout,
+        null
+    );
+});
+
+test("checkout state is isolated between sessions", () => {
+    clearSessions();
+
+    const sessionA =
+        getOrCreateSession("checkout-a");
+
+    const sessionB =
+        getOrCreateSession("checkout-b");
+
+    sessionA.checkout = {
+        status: "pending_confirmation",
+        total: 50000,
+    };
+
+    assert.equal(
+        sessionA.checkout.status,
+        "pending_confirmation"
+    );
+
+    assert.equal(
+        sessionA.checkout.total,
+        50000
+    );
+
+    assert.equal(
+        sessionB.checkout,
+        null
+    );
+});
+
+test("deleting a session removes its checkout state", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-a");
+
+    session.checkout = {
+        status: "pending_confirmation",
+        total: 50000,
+    };
+
+    assert.equal(
+        deleteSession("checkout-a"),
+        true
+    );
+
+    const newSession =
+        getOrCreateSession("checkout-a");
+
+    assert.equal(
+        newSession.checkout,
+        null
+    );
+});
