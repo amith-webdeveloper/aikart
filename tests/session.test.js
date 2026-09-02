@@ -754,6 +754,259 @@ test("returns null for an unknown session", () => {
     );
 });
 
+test("payment creation rejects an unknown session", async () => {
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/create`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "unknown-create-payment-session",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 404);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                error: "Session not found",
+            }
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment creation rejects an unconfirmed checkout", async () => {
+    const session = getOrCreateSession(
+        "payment-create-unconfirmed"
+    );
+
+    session.checkout = {
+        status: "pending_confirmation",
+        items: [
+            {
+                productId: "prod_1",
+                name: "Test Product",
+                quantity: 1,
+                unitPrice: 100,
+                subtotal: 100,
+            },
+        ],
+        total: 100,
+        cartVersion: 0,
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/create`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-create-unconfirmed",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 400);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                error:
+                    "Checkout must be confirmed before payment",
+            }
+        );
+
+        assert.equal(
+            session.payment,
+            null
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment creation creates a Razorpay order for a confirmed checkout", async () => {
+    const session = getOrCreateSession(
+        "payment-create-confirmed"
+    );
+
+    session.checkout = {
+        status: "confirmed",
+        items: [
+            {
+                productId: "prod_1",
+                name: "Test Product",
+                quantity: 1,
+                unitPrice: 100,
+                subtotal: 100,
+            },
+        ],
+        total: 100,
+        cartVersion: 0,
+    };
+
+    const originalCreate =
+        razorpay.orders.create;
+
+    razorpay.orders.create = async (options) => {
+        assert.deepEqual(
+            options,
+            {
+                amount: 10000,
+                currency: "INR",
+            }
+        );
+
+        return {
+            id: "order_test_create_123",
+            amount: 10000,
+            currency: "INR",
+            status: "created",
+        };
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/create`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-create-confirmed",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 200);
+
+        const body = await response.json();
+
+        assert.equal(
+            body.success,
+            true
+        );
+
+        assert.deepEqual(
+            body.payment,
+            {
+                status: "created",
+                razorpayOrderId: "order_test_create_123",
+                amount: 10000,
+            }
+        );
+
+        assert.deepEqual(
+            session.payment,
+            body.payment
+        );
+    } finally {
+        server.close();
+        razorpay.orders.create =
+            originalCreate;
+    }
+});
+
+test("payment creation rejects an existing active payment", async () => {
+    const session = getOrCreateSession(
+        "payment-create-existing"
+    );
+
+    session.checkout = {
+        status: "confirmed",
+        items: [
+            {
+                productId: "prod_1",
+                name: "Test Product",
+                quantity: 1,
+                unitPrice: 100,
+                subtotal: 100,
+            },
+        ],
+        total: 100,
+        cartVersion: 0,
+    };
+
+    session.payment = {
+        status: "created",
+        razorpayOrderId: "order_existing_123",
+        amount: 10000,
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/create`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-create-existing",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 400);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                error:
+                    "An active payment already exists",
+            }
+        );
+
+        assert.deepEqual(
+            session.payment,
+            {
+                status: "created",
+                razorpayOrderId: "order_existing_123",
+                amount: 10000,
+            }
+        );
+    } finally {
+        server.close();
+    }
+});
+
 test("payment verification rejects an unknown session", async () => {
     clearSessions();
 

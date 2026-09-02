@@ -17,8 +17,13 @@ const {
 } = require("./commerce/checkoutService");
 
 const {
+  createPaymentState,
   verifyPaymentForSession,
 } = require("./payments/paymentService");
+
+const {
+  createRazorpayOrder,
+} = require("./payments/razorpayService");
 
 
 const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, resolveProduct, getProductAttribute } = require("./tools/productTools");
@@ -754,6 +759,64 @@ app.post("/api/test/reset-cart", (req, res) => {
   });
 });
 
+app.post("/api/payment/create", async (req, res) => {
+  const { sessionId } = req.body;
+
+  if (!sessionId || typeof sessionId !== "string") {
+    return res.status(400).json({
+      error: "A valid sessionId is required",
+    });
+  }
+
+  const session = getSession(sessionId);
+
+  if (!session) {
+    return res.status(404).json({
+      error: "Session not found",
+    });
+  }
+
+  if (!session.checkout) {
+    return res.status(400).json({
+      error: "No checkout exists",
+    });
+  }
+
+  if (
+    session.payment &&
+    session.payment.status === "created"
+  ) {
+    return res.status(400).json({
+      error: "An active payment already exists",
+    });
+  }
+
+  if (session.checkout.status !== "confirmed") {
+    return res.status(400).json({
+      error: "Checkout must be confirmed before payment",
+    });
+  }
+
+  try {
+    const order = await createRazorpayOrder(
+      session.checkout.total
+    );
+
+    const payment = createPaymentState(order);
+
+    session.payment = payment;
+
+    return res.status(200).json({
+      success: true,
+      payment,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
 app.post("/api/payment/verify", async (req, res) => {
   const {
     sessionId,
@@ -784,10 +847,10 @@ app.post("/api/payment/verify", async (req, res) => {
 
   try {
     const payment = await verifyPaymentForSession(
-    session,
-    razorpayPaymentId,
-    razorpaySignature
-);
+      session,
+      razorpayPaymentId,
+      razorpaySignature
+    );
 
     return res.status(200).json({
       success: true,
