@@ -9,6 +9,7 @@ function createSession(sessionId) {
         cart: [],
         cartVersion: 0,
         checkout: null,
+        payment: null,
     };
 }
 

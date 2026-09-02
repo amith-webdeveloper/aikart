@@ -7,6 +7,12 @@ const {
     clearSessions,
 } = require("../backend/state/sessionStore");
 
+const {
+    createPaymentState,
+    transitionPayment,
+} = require("../backend/payments/paymentService");
+
+
 test("creates and retrieves the same session", () => {
     clearSessions();
 
@@ -213,6 +219,7 @@ test("new sessions start without an active checkout", () => {
     );
 });
 
+
 test("checkout state is isolated between sessions", () => {
     clearSessions();
 
@@ -265,6 +272,131 @@ test("deleting a session removes its checkout state", () => {
     assert.equal(
         newSession.checkout,
         null
+    );
+});
+
+test("new sessions start without an active payment", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("payment-a");
+
+    assert.equal(
+        session.payment,
+        null
+    );
+});
+
+test("payment state is isolated between sessions", () => {
+    clearSessions();
+
+    const sessionA =
+        getOrCreateSession("payment-a");
+
+    const sessionB =
+        getOrCreateSession("payment-b");
+
+    sessionA.payment = {
+        status: "created",
+        razorpayOrderId: "order_test_123",
+        amount: 10000,
+    };
+
+    assert.equal(
+        sessionA.payment.status,
+        "created"
+    );
+
+    assert.equal(
+        sessionA.payment.razorpayOrderId,
+        "order_test_123"
+    );
+
+    assert.equal(
+        sessionB.payment,
+        null
+    );
+});
+
+test("payment state is created from a Razorpay order", () => {
+    const payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    assert.deepEqual(
+        payment,
+        {
+            status: "created",
+            razorpayOrderId: "order_test_123",
+            amount: 10000,
+        }
+    );
+});
+
+test("payment state rejects an invalid Razorpay order", () => {
+    assert.throws(
+        () => createPaymentState({
+            id: "order_test_123",
+            amount: 0,
+        }),
+        /Invalid payment amount/
+    );
+});
+
+test("payment can transition from created to paid", () => {
+    const payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    const result = transitionPayment(
+        payment,
+        "paid"
+    );
+
+    assert.equal(result.status, "paid");
+});
+
+test("payment can transition from created to failed", () => {
+    const payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    const result = transitionPayment(
+        payment,
+        "failed"
+    );
+
+    assert.equal(result.status, "failed");
+});
+
+test("payment can transition from created to cancelled", () => {
+    const payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    const result = transitionPayment(
+        payment,
+        "cancelled"
+    );
+
+    assert.equal(result.status, "cancelled");
+});
+
+test("paid payment cannot transition again", () => {
+    const payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    transitionPayment(payment, "paid");
+
+    assert.throws(
+        () => transitionPayment(payment, "failed"),
+        /Invalid payment transition/
     );
 });
 
