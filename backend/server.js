@@ -10,6 +10,9 @@ const products = require("./data/products");
 
 
 
+const {
+  recordAuditEvent,
+} = require("./state/auditLog");
 
 const {
   createCheckoutSnapshot,
@@ -1496,6 +1499,15 @@ app.post("/api/chat", async (req, res) => {
       );
 
       session.checkout = checkout;
+
+      recordAuditEvent(
+        session,
+        "checkout.created",
+        {
+          total: checkout.total,
+          cartVersion: checkout.cartVersion,
+        }
+      );
 
       return sendChatResponse(
         res,

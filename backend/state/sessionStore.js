@@ -10,6 +10,7 @@ function createSession(sessionId) {
         cartVersion: 0,
         checkout: null,
         payment: null,
+        auditLog: [],
     };
 }
 

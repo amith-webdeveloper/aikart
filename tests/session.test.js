@@ -17,6 +17,10 @@ function startTestServer() {
 }
 
 
+const {
+    recordAuditEvent,
+} = require("../backend/state/auditLog");
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -38,6 +42,37 @@ const {
     razorpay,
 } = require("../backend/payments/razorpayService");
 
+
+test("audit events are recorded with type and timestamp", () => {
+    const session = getOrCreateSession(
+        "audit-log-basic"
+    );
+
+    const event = recordAuditEvent(
+        session,
+        "checkout.created"
+    );
+
+    assert.equal(
+        event.type,
+        "checkout.created"
+    );
+
+    assert.equal(
+        typeof event.timestamp,
+        "string"
+    );
+
+    assert.equal(
+        session.auditLog.length,
+        1
+    );
+
+    assert.deepEqual(
+        session.auditLog[0],
+        event
+    );
+});
 
 test("creates and retrieves the same session", () => {
     clearSessions();
@@ -2477,4 +2512,76 @@ test("checkout confirmation remains isolated between sessions", () => {
         sessionA.checkout.status,
         "pending_confirmation"
     );
+});
+
+test("checkout request records a checkout.created audit event", async () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("audit-checkout-created");
+
+    const {
+        addToCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: session.cart,
+    });
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/chat`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId:
+                        "audit-checkout-created",
+                    message:
+                        "proceed to checkout",
+                }),
+            }
+        );
+
+        assert.equal(
+            response.status,
+            200
+        );
+
+        const body =
+            await response.json();
+
+        assert.match(
+            body.message,
+            /checkout total is/i
+        );
+
+        assert.equal(
+            session.auditLog.length,
+            1
+        );
+
+        assert.deepEqual(
+            session.auditLog[0],
+            {
+                type: "checkout.created",
+                timestamp:
+                    session.auditLog[0].timestamp,
+                total: 55000,
+                cartVersion:
+                    session.cartVersion,
+            }
+        );
+    } finally {
+        server.close();
+    }
 });
