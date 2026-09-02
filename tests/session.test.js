@@ -439,6 +439,7 @@ test("marks the session payment as failed", () => {
             id: "order_test_123",
             amount: 10000,
         }),
+        auditLog: [],
     };
 
     const {
@@ -449,6 +450,21 @@ test("marks the session payment as failed", () => {
 
     assert.equal(result.status, "failed");
     assert.equal(session.payment.status, "failed");
+    const failedEvents =
+        session.auditLog.filter(
+            (event) =>
+                event.type === "payment.failed"
+        );
+
+    assert.equal(failedEvents.length, 1);
+    assert.equal(
+        failedEvents[0].amount,
+        10000
+    );
+    assert.equal(
+        failedEvents[0].razorpayOrderId,
+        "order_test_123"
+    );
 });
 
 test("payment can transition from created to cancelled", () => {
@@ -1074,6 +1090,21 @@ test("payment creation creates a Razorpay order for a confirmed checkout", async
         assert.deepEqual(
             session.payment,
             body.payment
+        );
+        const createdEvents =
+            session.auditLog.filter(
+                (event) =>
+                    event.type === "payment.created"
+            );
+
+        assert.equal(createdEvents.length, 1);
+        assert.equal(
+            createdEvents[0].amount,
+            10000
+        );
+        assert.equal(
+            createdEvents[0].razorpayOrderId,
+            "order_test_create_123"
         );
     } finally {
         server.close();
@@ -1701,6 +1732,21 @@ test("payment cancellation marks the active payment as cancelled", async () => {
         assert.equal(
             session.payment.status,
             "cancelled"
+        );
+        const cancelledEvents =
+            session.auditLog.filter(
+                (event) =>
+                    event.type === "payment.cancelled"
+            );
+
+        assert.equal(cancelledEvents.length, 1);
+        assert.equal(
+            cancelledEvents[0].amount,
+            10000
+        );
+        assert.equal(
+            cancelledEvents[0].razorpayOrderId,
+            "order_test_123"
         );
     } finally {
         server.close();

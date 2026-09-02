@@ -817,6 +817,15 @@ app.post("/api/payment/create", async (req, res) => {
 
     session.payment = payment;
 
+    recordAuditEvent(
+      session,
+      "payment.created",
+      {
+        amount: payment.amount,
+        razorpayOrderId: payment.razorpayOrderId,
+      }
+    );
+
     return res.status(200).json({
       success: true,
       payment,
@@ -847,6 +856,15 @@ app.post("/api/payment/cancel", (req, res) => {
 
   try {
     const payment = cancelPaymentForSession(session);
+
+    recordAuditEvent(
+      session,
+      "payment.cancelled",
+      {
+        amount: payment.amount,
+        razorpayOrderId: payment.razorpayOrderId,
+      }
+    );
 
     return res.status(200).json({
       success: true,

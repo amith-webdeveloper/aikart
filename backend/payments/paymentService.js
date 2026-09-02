@@ -3,6 +3,10 @@ const {
     fetchRazorpayPayment,
 } = require("./razorpayService");
 
+const {
+    recordAuditEvent,
+} = require("../state/auditLog");
+
 function createPaymentState(order) {
     if (!order || typeof order.id !== "string") {
         throw new Error("Invalid Razorpay order");
@@ -45,10 +49,21 @@ function failPaymentForSession(session) {
         throw new Error("No active payment");
     }
 
-    return transitionPayment(
+    const payment = transitionPayment(
         session.payment,
         "failed"
     );
+
+    recordAuditEvent(
+        session,
+        "payment.failed",
+        {
+            amount: payment.amount,
+            razorpayOrderId: payment.razorpayOrderId,
+        }
+    );
+
+    return payment;
 }
 
 function cancelPaymentForSession(session) {
