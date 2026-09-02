@@ -267,3 +267,318 @@ test("deleting a session removes its checkout state", () => {
         null
     );
 });
+
+test("creates a checkout snapshot from the session cart", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-snapshot-a");
+
+    const {
+        addToCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: session.cart,
+    });
+
+    const {
+        createCheckoutSnapshot,
+    } = require("../backend/commerce/checkoutService");
+
+    const checkout =
+        createCheckoutSnapshot(session.cart);
+
+    assert.equal(
+        checkout.status,
+        "pending_confirmation"
+    );
+
+    assert.equal(
+        checkout.items.length,
+        1
+    );
+
+    assert.equal(
+        checkout.items[0].productId,
+        "lap001"
+    );
+
+    assert.equal(
+        checkout.items[0].name,
+        "ProBook X"
+    );
+
+    assert.equal(
+        checkout.items[0].quantity,
+        1
+    );
+
+    assert.equal(
+        checkout.items[0].unitPrice,
+        55000
+    );
+
+    assert.equal(
+        checkout.items[0].subtotal,
+        55000
+    );
+
+    assert.equal(
+        checkout.total,
+        55000
+    );
+});
+
+
+test("checkout snapshot calculates total from catalog prices", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-snapshot-b");
+
+    const {
+        addToCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: session.cart,
+    });
+
+    addToCart({
+        productName: "Wireless Mouse",
+        quantity: 2,
+        cart: session.cart,
+    });
+
+    const {
+        createCheckoutSnapshot,
+    } = require("../backend/commerce/checkoutService");
+
+    const checkout =
+        createCheckoutSnapshot(session.cart);
+
+    assert.equal(
+        checkout.items.length,
+        2
+    );
+
+    assert.equal(
+        checkout.total,
+        56600
+    );
+
+    assert.equal(
+        checkout.items[0].subtotal,
+        55000
+    );
+
+    assert.equal(
+        checkout.items[1].subtotal,
+        1600
+    );
+});
+
+
+test("cannot create checkout from an empty cart", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-empty");
+
+    const {
+        createCheckoutSnapshot,
+    } = require("../backend/commerce/checkoutService");
+
+    assert.throws(
+        () => createCheckoutSnapshot(session.cart),
+        /empty cart/i
+    );
+});
+
+
+test("checkout snapshot rejects invalid cart quantity", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-invalid-quantity");
+
+    session.cart.push({
+        productId: "lap001",
+        quantity: 0,
+    });
+
+    const {
+        createCheckoutSnapshot,
+    } = require("../backend/commerce/checkoutService");
+
+    assert.throws(
+        () => createCheckoutSnapshot(session.cart),
+        /invalid quantity/i
+    );
+});
+
+
+test("checkout snapshot rejects unknown products", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-unknown-product");
+
+    session.cart.push({
+        productId: "does-not-exist",
+        quantity: 1,
+    });
+
+    const {
+        createCheckoutSnapshot,
+    } = require("../backend/commerce/checkoutService");
+
+    assert.throws(
+        () => createCheckoutSnapshot(session.cart),
+        /no longer exists/i
+    );
+});
+
+test("confirms a pending checkout", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-confirm-a");
+
+    const {
+        addToCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: session.cart,
+    });
+
+    const {
+        createCheckoutSnapshot,
+        confirmCheckout,
+    } = require("../backend/commerce/checkoutService");
+
+    session.checkout =
+        createCheckoutSnapshot(session.cart);
+
+    const confirmedCheckout =
+        confirmCheckout(session.checkout);
+
+    session.checkout = confirmedCheckout;
+
+    assert.equal(
+        session.checkout.status,
+        "confirmed"
+    );
+});
+
+
+test("cannot confirm the same checkout twice", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-confirm-b");
+
+    const {
+        addToCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: session.cart,
+    });
+
+    const {
+        createCheckoutSnapshot,
+        confirmCheckout,
+    } = require("../backend/commerce/checkoutService");
+
+    session.checkout =
+        createCheckoutSnapshot(session.cart);
+
+    confirmCheckout(session.checkout);
+
+    assert.throws(
+        () => confirmCheckout(session.checkout),
+        /no longer awaiting confirmation/i
+    );
+});
+
+
+test("cannot confirm when no checkout is awaiting confirmation", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("checkout-confirm-c");
+
+    const {
+        confirmCheckout,
+    } = require("../backend/commerce/checkoutService");
+
+    assert.equal(
+        session.checkout,
+        null
+    );
+
+    assert.throws(
+        () => confirmCheckout(session.checkout),
+        /no checkout is awaiting confirmation/i
+    );
+});
+
+
+test("checkout confirmation remains isolated between sessions", () => {
+    clearSessions();
+
+    const sessionA =
+        getOrCreateSession("checkout-confirm-d-a");
+
+    const sessionB =
+        getOrCreateSession("checkout-confirm-d-b");
+
+    const {
+        addToCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: sessionA.cart,
+    });
+
+    const {
+        createCheckoutSnapshot,
+        confirmCheckout,
+    } = require("../backend/commerce/checkoutService");
+
+    sessionA.checkout =
+        createCheckoutSnapshot(sessionA.cart);
+
+    assert.equal(
+        sessionA.checkout.status,
+        "pending_confirmation"
+    );
+
+    assert.equal(
+        sessionB.checkout,
+        null
+    );
+
+    assert.throws(
+        () => confirmCheckout(sessionB.checkout),
+        /no checkout is awaiting confirmation/i
+    );
+
+    assert.equal(
+        sessionA.checkout.status,
+        "pending_confirmation"
+    );
+});

@@ -9,9 +9,13 @@ const {
   clearSessions,
 } = require("./state/sessionStore");
 
+const {
+  createCheckoutSnapshot,
+  confirmCheckout,
+} = require("./commerce/checkoutService");
+
+
 const app = express();
-
-
 
 app.use(cors());
 app.use(express.json());
@@ -696,6 +700,26 @@ function sendChatResponse(
   });
 }
 
+function isCheckoutRequest(userMessage) {
+  if (typeof userMessage !== "string") {
+    return false;
+  }
+
+  return /\b(proceed to checkout|go to checkout|checkout|check out)\b/i.test(
+    userMessage
+  );
+}
+
+function isCheckoutConfirmation(userMessage) {
+  if (typeof userMessage !== "string") {
+    return false;
+  }
+
+  return /^\s*(yes|y|confirm|confirmed|proceed|proceed to payment)\s*[.!]?\s*$/i.test(
+    userMessage
+  );
+}
+
 // --------------------------------------------------
 // TEST-ONLY CART RESET
 // --------------------------------------------------
@@ -1292,6 +1316,73 @@ app.post("/api/chat", async (req, res) => {
     );
   }
 
+  // --------------------------------------------------
+  // DETERMINISTIC CHECKOUT REQUEST
+  // --------------------------------------------------
+
+  if (isCheckoutRequest(userMessage)) {
+    try {
+      const checkout = createCheckoutSnapshot(session.cart);
+
+      session.checkout = checkout;
+
+      return sendChatResponse(
+        res,
+        session,
+        userMessage,
+        `Your checkout total is ₹${checkout.total.toLocaleString(
+          "en-IN"
+        )}. Please review your order and confirm if you want to proceed to payment.`
+      );
+    } catch (error) {
+      return sendChatResponse(
+        res,
+        session,
+        userMessage,
+        error.message
+      );
+    }
+  }
+
+
+  // --------------------------------------------------
+// DETERMINISTIC CHECKOUT CONFIRMATION
+// --------------------------------------------------
+
+if (isCheckoutConfirmation(userMessage)) {
+  console.log("Deterministic checkout confirmation request.");
+
+  if (!session.checkout) {
+    return sendChatResponse(
+      res,
+      session,
+      userMessage,
+      "No checkout is awaiting confirmation."
+    );
+  }
+
+  try {
+    const confirmedCheckout = confirmCheckout(
+      session.checkout
+    );
+
+    session.checkout = confirmedCheckout;
+
+    return sendChatResponse(
+      res,
+      session,
+      userMessage,
+      "Your checkout has been confirmed. You may proceed to payment."
+    );
+  } catch (error) {
+    return sendChatResponse(
+      res,
+      session,
+      userMessage,
+      error.message
+    );
+  }
+}
 
   const messages = [
     {
