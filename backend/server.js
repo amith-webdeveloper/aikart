@@ -1552,6 +1552,15 @@ app.post("/api/chat", async (req, res) => {
 
       session.checkout = confirmedCheckout;
 
+      recordAuditEvent(
+        session,
+        "checkout.confirmed",
+        {
+          total: confirmedCheckout.total,
+          cartVersion: confirmedCheckout.cartVersion,
+        }
+      );
+
       return sendChatResponse(
         res,
         session,

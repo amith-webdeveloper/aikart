@@ -2585,3 +2585,77 @@ test("checkout request records a checkout.created audit event", async () => {
         server.close();
     }
 });
+
+test("checkout confirmation records a checkout.confirmed audit event", async () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("audit-checkout-confirmed");
+
+    const {
+        addToCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: session.cart,
+    });
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const checkoutResponse = await fetch(
+            `${baseUrl}/api/chat`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "audit-checkout-confirmed",
+                    message: "checkout",
+                }),
+            }
+        );
+
+        assert.equal(checkoutResponse.status, 200);
+
+        const confirmationResponse = await fetch(
+            `${baseUrl}/api/chat`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "audit-checkout-confirmed",
+                    message: "yes",
+                }),
+            }
+        );
+
+        assert.equal(confirmationResponse.status, 200);
+
+        const confirmedEvents =
+            session.auditLog.filter(
+                (event) =>
+                    event.type === "checkout.confirmed"
+            );
+
+        assert.equal(confirmedEvents.length, 1);
+        assert.equal(
+            confirmedEvents[0].total,
+            55000
+        );
+        assert.equal(
+            confirmedEvents[0].cartVersion,
+            session.cartVersion
+        );
+    } finally {
+        server.close();
+    }
+});
