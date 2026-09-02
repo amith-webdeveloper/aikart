@@ -62,6 +62,24 @@ function createCheckoutSnapshot(cart, cartVersion) {
     };
 }
 
+function transitionCheckout(checkout, nextStatus) {
+    if (!checkout) {
+        throw new Error("Checkout does not exist");
+    }
+
+    if (
+        checkout.status === "pending_confirmation" &&
+        nextStatus === "confirmed"
+    ) {
+        checkout.status = nextStatus;
+        return checkout;
+    }
+
+    throw new Error(
+        `Invalid checkout transition: ${checkout.status} -> ${nextStatus}`
+    );
+}
+
 function confirmCheckout(checkout, currentCartVersion) {
     if (!checkout) {
         throw new Error("No checkout is awaiting confirmation");
@@ -75,12 +93,14 @@ function confirmCheckout(checkout, currentCartVersion) {
         throw new Error("Checkout is stale because the cart has changed");
     }
 
-    checkout.status = "confirmed";
-
-    return checkout;
+    return transitionCheckout(
+        checkout,
+        "confirmed"
+    );
 }
 
 module.exports = {
     createCheckoutSnapshot,
     confirmCheckout,
+    transitionCheckout,
 };

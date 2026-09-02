@@ -531,6 +531,76 @@ test("cannot confirm the same checkout twice", () => {
     );
 });
 
+test("allows pending checkout to transition to confirmed", () => {
+    const checkout = {
+        status: "pending_confirmation",
+    };
+
+    const {
+        transitionCheckout,
+    } = require("../backend/commerce/checkoutService");
+
+    const result =
+        transitionCheckout(
+            checkout,
+            "confirmed"
+        );
+
+    assert.equal(
+        result.status,
+        "confirmed"
+    );
+});
+
+test("rejects invalid checkout state transitions", () => {
+    const checkout = {
+        status: "confirmed",
+    };
+
+    const {
+        transitionCheckout,
+    } = require("../backend/commerce/checkoutService");
+
+    assert.throws(
+        () =>
+            transitionCheckout(
+                checkout,
+                "confirmed"
+            ),
+        /invalid checkout transition/i
+    );
+
+    assert.equal(
+        checkout.status,
+        "confirmed"
+    );
+});
+
+test("rejects unsupported checkout state transitions", () => {
+    const checkout = {
+        status: "pending_confirmation",
+    };
+
+    const {
+        transitionCheckout,
+    } = require("../backend/commerce/checkoutService");
+
+    assert.throws(
+        () =>
+            transitionCheckout(
+                checkout,
+                "paid"
+            ),
+        /invalid checkout transition/i
+    );
+
+    assert.equal(
+        checkout.status,
+        "pending_confirmation"
+    );
+});
+
+
 test("cannot confirm a checkout after the cart changes", () => {
     clearSessions();
 
