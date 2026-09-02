@@ -28,6 +28,14 @@ function getOrCreateSession(sessionId) {
     return sessions.get(sessionId);
 }
 
+function getSession(sessionId) {
+    if (!sessionId || typeof sessionId !== "string") {
+        throw new Error("A valid session ID is required");
+    }
+
+    return sessions.get(sessionId) || null;
+}
+
 function deleteSession(sessionId) {
     return sessions.delete(sessionId);
 }
@@ -38,6 +46,7 @@ function clearSessions() {
 
 module.exports = {
     getOrCreateSession,
+    getSession,
     deleteSession,
     clearSessions,
 };

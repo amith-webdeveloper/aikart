@@ -8,24 +8,26 @@ const express = require("express");
 const cors = require("cors");
 const products = require("./data/products");
 
-const Razorpay = require("razorpay");
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
 
-const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, resolveProduct, getProductAttribute } = require("./tools/productTools");
-
-const {
-  getOrCreateSession,
-  clearSessions,
-} = require("./state/sessionStore");
 
 const {
   createCheckoutSnapshot,
   confirmCheckout,
 } = require("./commerce/checkoutService");
+
+const {
+  verifyPaymentForSession,
+} = require("./payments/paymentService");
+
+
+const { searchProducts, getProductDetails, addToCart, getCart, removeFromCart, resolveProduct, getProductAttribute } = require("./tools/productTools");
+
+const {
+  getOrCreateSession,
+  getSession,
+  clearSessions,
+} = require("./state/sessionStore");
 
 
 const app = express();
@@ -751,6 +753,53 @@ app.post("/api/test/reset-cart", (req, res) => {
     message: "Test sessions reset successfully",
   });
 });
+
+app.post("/api/payment/verify", async (req, res) => {
+  const {
+    sessionId,
+    razorpayPaymentId,
+    razorpaySignature,
+  } = req.body;
+
+  if (
+    !sessionId ||
+    typeof sessionId !== "string" ||
+    !razorpayPaymentId ||
+    typeof razorpayPaymentId !== "string" ||
+    !razorpaySignature ||
+    typeof razorpaySignature !== "string"
+  ) {
+    return res.status(400).json({
+      error: "Invalid payment verification data",
+    });
+  }
+
+  const session = getSession(sessionId);
+
+  if (!session) {
+    return res.status(404).json({
+      error: "Session not found",
+    });
+  }
+
+  try {
+    const payment = await verifyPaymentForSession(
+    session,
+    razorpayPaymentId,
+    razorpaySignature
+);
+
+    return res.status(200).json({
+      success: true,
+      payment,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      error: error.message,
+    });
+  }
+});
+
 
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message;
@@ -2467,6 +2516,10 @@ ${JSON.stringify(detailsResult.product, null, 2)}
 });
 
 
-app.listen(3000, () => {
-  console.log("AIKart backend running on http://localhost:3000");
-});
+if (require.main === module) {
+  app.listen(3000, () => {
+    console.log("AIKart backend running on http://localhost:3000");
+  });
+}
+
+module.exports = app;

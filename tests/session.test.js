@@ -1,8 +1,28 @@
+const http = require("http");
+const app = require("../backend/server");
+
+function startTestServer() {
+    return new Promise((resolve) => {
+        const server = http.createServer(app);
+
+        server.listen(0, () => {
+            const { port } = server.address();
+
+            resolve({
+                server,
+                baseUrl: `http://127.0.0.1:${port}`,
+            });
+        });
+    });
+}
+
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
     getOrCreateSession,
+    getSession,
     deleteSession,
     clearSessions,
 } = require("../backend/state/sessionStore");
@@ -10,7 +30,13 @@ const {
 const {
     createPaymentState,
     transitionPayment,
+    verifyPaymentForSession
 } = require("../backend/payments/paymentService");
+
+const {
+    verifyRazorpayPayment,
+    razorpay,
+} = require("../backend/payments/razorpayService");
 
 
 test("creates and retrieves the same session", () => {
@@ -398,6 +424,585 @@ test("paid payment cannot transition again", () => {
         () => transitionPayment(payment, "failed"),
         /Invalid payment transition/
     );
+});
+
+test("valid Razorpay payment signature is accepted", () => {
+    const orderId = "order_test_123";
+    const paymentId = "pay_test_123";
+
+    const crypto = require("crypto");
+
+    const signature = crypto
+        .createHmac(
+            "sha256",
+            process.env.RAZORPAY_KEY_SECRET
+        )
+        .update(`${orderId}|${paymentId}`)
+        .digest("hex");
+
+    const result = verifyRazorpayPayment(
+        orderId,
+        paymentId,
+        signature
+    );
+
+    assert.equal(result, true);
+});
+
+test("invalid Razorpay payment signature is rejected", () => {
+    const result = verifyRazorpayPayment(
+        "order_test_123",
+        "pay_test_123",
+        "forged_signature"
+    );
+
+    assert.equal(result, false);
+});
+
+test("payment verification rejects invalid input", () => {
+    assert.throws(
+        () => verifyRazorpayPayment(
+            null,
+            "pay_test_123",
+            "signature"
+        ),
+        /Invalid payment verification data/
+    );
+});
+
+test("payment cannot transition to paid unless it is created", () => {
+    const payment = {
+        status: "failed",
+        razorpayOrderId: "order_test_123",
+        amount: 10000,
+    };
+
+    assert.throws(
+        () => transitionPayment(payment, "paid"),
+        /Invalid payment transition/
+    );
+});
+
+test("valid payment verification marks session payment as paid", async () => {
+    const crypto = require("crypto");
+
+    const session = {
+        payment: createPaymentState({
+            id: "order_test_123",
+            amount: 10000,
+        }),
+    };
+
+    const paymentId = "pay_test_123";
+
+    const signature = crypto
+        .createHmac(
+            "sha256",
+            process.env.RAZORPAY_KEY_SECRET
+        )
+        .update(`order_test_123|${paymentId}`)
+        .digest("hex");
+
+    razorpay.payments.fetch = async () => ({
+        id: paymentId,
+        order_id: "order_test_123",
+        amount: 10000,
+        status: "captured",
+    });
+
+    const result = await verifyPaymentForSession(
+        session,
+        paymentId,
+        signature
+    );
+
+    assert.equal(result.status, "paid");
+    assert.equal(session.payment.status, "paid");
+});
+
+test("payment verification rejects a payment belonging to a different order", async () => {
+    const crypto = require("crypto");
+
+    const session = {
+        payment: createPaymentState({
+            id: "order_test_123",
+            amount: 10000,
+        }),
+    };
+
+    const paymentId = "pay_test_123";
+
+    const signature = crypto
+        .createHmac(
+            "sha256",
+            process.env.RAZORPAY_KEY_SECRET
+        )
+        .update(`order_test_123|${paymentId}`)
+        .digest("hex");
+
+    razorpay.payments.fetch = async () => ({
+        id: paymentId,
+        order_id: "order_attacker",
+        amount: 10000,
+        status: "captured",
+    });
+
+    await assert.rejects(
+        () =>
+            verifyPaymentForSession(
+                session,
+                paymentId,
+                signature
+            ),
+        /does not belong to this order/
+    );
+
+    assert.equal(
+        session.payment.status,
+        "created"
+    );
+});
+
+test("payment verification rejects a payment with a different amount", async () => {
+    const crypto = require("crypto");
+
+    const session = {
+        payment: createPaymentState({
+            id: "order_test_123",
+            amount: 10000,
+        }),
+    };
+
+    const paymentId = "pay_test_123";
+
+    const signature = crypto
+        .createHmac(
+            "sha256",
+            process.env.RAZORPAY_KEY_SECRET
+        )
+        .update(`order_test_123|${paymentId}`)
+        .digest("hex");
+
+    razorpay.payments.fetch = async () => ({
+        id: paymentId,
+        order_id: "order_test_123",
+        amount: 100,
+        status: "captured",
+    });
+
+    await assert.rejects(
+        () =>
+            verifyPaymentForSession(
+                session,
+                paymentId,
+                signature
+            ),
+        /amount does not match the order/
+    );
+
+    assert.equal(
+        session.payment.status,
+        "created"
+    );
+});
+
+test("payment verification rejects a payment that is not captured", async () => {
+    const crypto = require("crypto");
+
+    const session = {
+        payment: createPaymentState({
+            id: "order_test_123",
+            amount: 10000,
+        }),
+    };
+
+    const paymentId = "pay_test_123";
+
+    const signature = crypto
+        .createHmac(
+            "sha256",
+            process.env.RAZORPAY_KEY_SECRET
+        )
+        .update(`order_test_123|${paymentId}`)
+        .digest("hex");
+
+    razorpay.payments.fetch = async () => ({
+        id: paymentId,
+        order_id: "order_test_123",
+        amount: 10000,
+        status: "authorized",
+    });
+
+    await assert.rejects(
+        () =>
+            verifyPaymentForSession(
+                session,
+                paymentId,
+                signature
+            ),
+        /Payment has not been captured/
+    );
+
+    assert.equal(
+        session.payment.status,
+        "created"
+    );
+});
+
+test("payment verification does not mark payment as paid when Razorpay fetch fails", async () => {
+    const crypto = require("crypto");
+
+    const session = {
+        payment: createPaymentState({
+            id: "order_test_123",
+            amount: 10000,
+        }),
+    };
+
+    const paymentId = "pay_test_123";
+
+    const signature = crypto
+        .createHmac(
+            "sha256",
+            process.env.RAZORPAY_KEY_SECRET
+        )
+        .update(`order_test_123|${paymentId}`)
+        .digest("hex");
+
+    razorpay.payments.fetch = async () => {
+        throw new Error("Razorpay API unavailable");
+    };
+
+    await assert.rejects(
+        () =>
+            verifyPaymentForSession(
+                session,
+                paymentId,
+                signature
+            ),
+        /Razorpay API unavailable/
+    );
+
+    assert.equal(
+        session.payment.status,
+        "created"
+    );
+});
+
+test("invalid payment verification does not mark payment as paid", async () => {
+    const session = {
+        payment: createPaymentState({
+            id: "order_test_123",
+            amount: 10000,
+        }),
+    };
+
+    await assert.rejects(
+        () => verifyPaymentForSession(
+            session,
+            "pay_test_123",
+            "forged_signature"
+        ),
+        /Invalid payment signature/
+    );
+
+    assert.equal(
+        session.payment.status,
+        "created"
+    );
+});
+
+test("payment verification rejects a session without an active payment", async () => {
+    const session = {
+        payment: null,
+    };
+
+    await assert.rejects(
+        () => verifyPaymentForSession(
+            session,
+            "pay_test_123",
+            "signature"
+        ),
+        /No active payment/
+    );
+});
+
+test("gets an existing session without creating one", () => {
+    clearSessions();
+
+    const createdSession =
+        getOrCreateSession("lookup-a");
+
+    const foundSession =
+        getSession("lookup-a");
+
+    assert.equal(
+        foundSession,
+        createdSession
+    );
+});
+
+test("returns null for an unknown session", () => {
+    clearSessions();
+
+    const session =
+        getSession("does-not-exist");
+
+    assert.equal(
+        session,
+        null
+    );
+});
+
+test("payment verification rejects an unknown session", async () => {
+    clearSessions();
+
+    const { server, baseUrl } =
+        await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/verify`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "unknown-payment-session",
+                    razorpayPaymentId: "pay_test_123",
+                    razorpaySignature: "signature",
+                }),
+            }
+        );
+
+        const body = await response.json();
+
+        assert.equal(response.status, 404);
+        assert.equal(
+            body.error,
+            "Session not found"
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment verification marks a valid payment as paid through the API", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-http-valid"
+    );
+
+    session.payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    const paymentId = "pay_test_123";
+
+    const crypto = require("crypto");
+
+    const signature = crypto
+        .createHmac(
+            "sha256",
+            process.env.RAZORPAY_KEY_SECRET
+        )
+        .update(
+            `order_test_123|${paymentId}`
+        )
+        .digest("hex");
+
+    razorpay.payments.fetch = async () => ({
+        id: paymentId,
+        order_id: "order_test_123",
+        amount: 10000,
+        status: "captured",
+    });
+
+    const { server, baseUrl } =
+        await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/verify`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-http-valid",
+                    razorpayPaymentId: paymentId,
+                    razorpaySignature: signature,
+                }),
+            }
+        );
+
+        const body = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(body.success, true);
+        assert.equal(body.payment.status, "paid");
+        assert.equal(
+            body.payment.razorpayOrderId,
+            "order_test_123"
+        );
+        assert.equal(
+            session.payment.status,
+            "paid"
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment verification rejects a forged signature through the API", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-http-forged"
+    );
+
+    session.payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    const { server, baseUrl } =
+        await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/verify`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-http-forged",
+                    razorpayPaymentId: "pay_test_123",
+                    razorpaySignature: "this_is_forged",
+                }),
+            }
+        );
+
+        const body = await response.json();
+
+        assert.equal(response.status, 400);
+        assert.equal(
+            body.error,
+            "Invalid payment signature"
+        );
+
+        assert.equal(
+            session.payment.status,
+            "created"
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment verification rejects missing payment data through the API", async () => {
+    clearSessions();
+
+    const { server, baseUrl } =
+        await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/verify`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-http-invalid",
+                }),
+            }
+        );
+
+        const body = await response.json();
+
+        assert.equal(response.status, 400);
+        assert.equal(
+            body.error,
+            "Invalid payment verification data"
+        );
+    } finally {
+        server.close();
+    }
+});
+
+test("payment verification rejects a signature generated for a different order", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-http-wrong-order"
+    );
+
+    session.payment = createPaymentState({
+        id: "order_expected",
+        amount: 10000,
+    });
+
+    const paymentId = "pay_test_123";
+
+    const crypto = require("crypto");
+
+    const wrongOrderSignature = crypto
+        .createHmac(
+            "sha256",
+            process.env.RAZORPAY_KEY_SECRET
+        )
+        .update(
+            `order_attacker|${paymentId}`
+        )
+        .digest("hex");
+
+    const { server, baseUrl } =
+        await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/verify`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-http-wrong-order",
+                    razorpayPaymentId: paymentId,
+                    razorpaySignature: wrongOrderSignature,
+                }),
+            }
+        );
+
+        const body = await response.json();
+
+        assert.equal(response.status, 400);
+        assert.equal(
+            body.error,
+            "Invalid payment signature"
+        );
+
+        assert.equal(
+            session.payment.razorpayOrderId,
+            "order_expected"
+        );
+
+        assert.equal(
+            session.payment.status,
+            "created"
+        );
+    } finally {
+        server.close();
+    }
 });
 
 test("creates a checkout snapshot from the session cart", () => {

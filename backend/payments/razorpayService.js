@@ -1,4 +1,5 @@
 const path = require("path");
+const crypto = require("crypto");
 
 require("dotenv").config({
     path: path.resolve(__dirname, "../../.env"),
@@ -29,6 +30,42 @@ async function createRazorpayOrder(amountInRupees) {
     return order;
 }
 
+async function fetchRazorpayPayment(paymentId) {
+    if (typeof paymentId !== "string" || !paymentId) {
+        throw new Error("Invalid Razorpay payment ID");
+    }
+
+    return razorpay.payments.fetch(paymentId);
+}
+
+function verifyRazorpayPayment(
+    orderId,
+    paymentId,
+    signature
+) {
+    if (
+        typeof orderId !== "string" ||
+        typeof paymentId !== "string" ||
+        typeof signature !== "string"
+    ) {
+        throw new Error("Invalid payment verification data");
+    }
+
+    const generatedSignature =
+        crypto
+            .createHmac(
+                "sha256",
+                process.env.RAZORPAY_KEY_SECRET
+            )
+            .update(`${orderId}|${paymentId}`)
+            .digest("hex");
+
+    return generatedSignature === signature;
+}
+
 module.exports = {
     createRazorpayOrder,
+    verifyRazorpayPayment,
+    fetchRazorpayPayment,
+    razorpay,
 };
