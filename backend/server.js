@@ -1094,6 +1094,7 @@ app.post("/api/chat", async (req, res) => {
       );
     }
 
+    session.cartVersion += 1;
     return sendChatResponse(
       res,
       session,
@@ -1198,6 +1199,8 @@ app.post("/api/chat", async (req, res) => {
       );
     }
 
+    session.cartVersion += 1;
+
     return sendChatResponse(
       res,
       session,
@@ -1277,6 +1280,7 @@ app.post("/api/chat", async (req, res) => {
         `I couldn't remove ${resolutionResult.productName} from your cart.`
       );
     }
+    session.cartVersion += 1;
 
     return sendChatResponse(
       res,
@@ -1322,7 +1326,10 @@ app.post("/api/chat", async (req, res) => {
 
   if (isCheckoutRequest(userMessage)) {
     try {
-      const checkout = createCheckoutSnapshot(session.cart);
+      const checkout = createCheckoutSnapshot(
+        session.cart,
+        session.cartVersion
+      );
 
       session.checkout = checkout;
 
@@ -1346,43 +1353,44 @@ app.post("/api/chat", async (req, res) => {
 
 
   // --------------------------------------------------
-// DETERMINISTIC CHECKOUT CONFIRMATION
-// --------------------------------------------------
+  // DETERMINISTIC CHECKOUT CONFIRMATION
+  // --------------------------------------------------
 
-if (isCheckoutConfirmation(userMessage)) {
-  console.log("Deterministic checkout confirmation request.");
+  if (isCheckoutConfirmation(userMessage)) {
+    console.log("Deterministic checkout confirmation request.");
 
-  if (!session.checkout) {
-    return sendChatResponse(
-      res,
-      session,
-      userMessage,
-      "No checkout is awaiting confirmation."
-    );
+    if (!session.checkout) {
+      return sendChatResponse(
+        res,
+        session,
+        userMessage,
+        "No checkout is awaiting confirmation."
+      );
+    }
+
+    try {
+      const confirmedCheckout = confirmCheckout(
+        session.checkout,
+        session.cartVersion
+      );
+
+      session.checkout = confirmedCheckout;
+
+      return sendChatResponse(
+        res,
+        session,
+        userMessage,
+        "Your checkout has been confirmed. You may proceed to payment."
+      );
+    } catch (error) {
+      return sendChatResponse(
+        res,
+        session,
+        userMessage,
+        error.message
+      );
+    }
   }
-
-  try {
-    const confirmedCheckout = confirmCheckout(
-      session.checkout
-    );
-
-    session.checkout = confirmedCheckout;
-
-    return sendChatResponse(
-      res,
-      session,
-      userMessage,
-      "Your checkout has been confirmed. You may proceed to payment."
-    );
-  } catch (error) {
-    return sendChatResponse(
-      res,
-      session,
-      userMessage,
-      error.message
-    );
-  }
-}
 
   const messages = [
     {
@@ -1990,12 +1998,12 @@ ${JSON.stringify(
             console.dir(addResult, { depth: null });
 
             if (addResult.success) {
+              session.cartVersion += 1;
               return res.json({
                 message:
                   `${cheapestProduct.name} has been added to your cart.`,
               });
             }
-
             return res.json({
               message:
                 addResult.error ||
@@ -2395,6 +2403,7 @@ ${JSON.stringify(detailsResult.product, null, 2)}
             });
 
             if (addResult.success) {
+              session.cartVersion += 1;
               return sendChatResponse(
                 res,
                 session,

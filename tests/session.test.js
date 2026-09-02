@@ -289,7 +289,10 @@ test("creates a checkout snapshot from the session cart", () => {
     } = require("../backend/commerce/checkoutService");
 
     const checkout =
-        createCheckoutSnapshot(session.cart);
+        createCheckoutSnapshot(
+            session.cart,
+            session.cartVersion
+        );
 
     assert.equal(
         checkout.status,
@@ -329,6 +332,11 @@ test("creates a checkout snapshot from the session cart", () => {
     assert.equal(
         checkout.total,
         55000
+    );
+
+    assert.equal(
+        checkout.cartVersion,
+        session.cartVersion
     );
 });
 
@@ -466,11 +474,16 @@ test("confirms a pending checkout", () => {
     } = require("../backend/commerce/checkoutService");
 
     session.checkout =
-        createCheckoutSnapshot(session.cart);
+        createCheckoutSnapshot(
+            session.cart,
+            session.cartVersion
+        );
 
     const confirmedCheckout =
-        confirmCheckout(session.checkout);
-
+        confirmCheckout(
+            session.checkout,
+            session.cartVersion
+        );
     session.checkout = confirmedCheckout;
 
     assert.equal(
@@ -502,13 +515,69 @@ test("cannot confirm the same checkout twice", () => {
     } = require("../backend/commerce/checkoutService");
 
     session.checkout =
-        createCheckoutSnapshot(session.cart);
+        createCheckoutSnapshot(
+            session.cart,
+            session.cartVersion
+        );
 
-    confirmCheckout(session.checkout);
+    confirmCheckout(
+        session.checkout,
+        session.cartVersion
+    );
 
     assert.throws(
         () => confirmCheckout(session.checkout),
         /no longer awaiting confirmation/i
+    );
+});
+
+test("cannot confirm a checkout after the cart changes", () => {
+    clearSessions();
+
+    const session =
+        getOrCreateSession("stale-checkout-test");
+
+    const {
+        addToCart,
+    } = require("../backend/tools/productTools");
+
+    addToCart({
+        productName: "ProBook X",
+        quantity: 1,
+        cart: session.cart,
+    });
+
+    const {
+        createCheckoutSnapshot,
+        confirmCheckout,
+    } = require("../backend/commerce/checkoutService");
+
+    session.checkout =
+        createCheckoutSnapshot(
+            session.cart,
+            session.cartVersion
+        );
+
+    addToCart({
+        productName: "Wireless Mouse",
+        quantity: 1,
+        cart: session.cart,
+    });
+
+    session.cartVersion += 1;
+
+    assert.throws(
+        () =>
+            confirmCheckout(
+                session.checkout,
+                session.cartVersion
+            ),
+        /stale.*cart.*changed/i
+    );
+
+    assert.equal(
+        session.checkout.status,
+        "pending_confirmation"
     );
 });
 
@@ -560,7 +629,10 @@ test("checkout confirmation remains isolated between sessions", () => {
     } = require("../backend/commerce/checkoutService");
 
     sessionA.checkout =
-        createCheckoutSnapshot(sessionA.cart);
+        createCheckoutSnapshot(
+            sessionA.cart,
+            sessionA.cartVersion
+        );
 
     assert.equal(
         sessionA.checkout.status,

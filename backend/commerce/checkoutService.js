@@ -1,6 +1,6 @@
 const products = require("../data/products");
 
-function createCheckoutSnapshot(cart) {
+function createCheckoutSnapshot(cart, cartVersion) {
     if (!Array.isArray(cart)) {
         throw new Error("Cart must be an array");
     }
@@ -58,16 +58,21 @@ function createCheckoutSnapshot(cart) {
         status: "pending_confirmation",
         items,
         total,
+        cartVersion,
     };
 }
 
-function confirmCheckout(checkout) {
+function confirmCheckout(checkout, currentCartVersion) {
     if (!checkout) {
         throw new Error("No checkout is awaiting confirmation");
     }
 
     if (checkout.status !== "pending_confirmation") {
         throw new Error("Checkout is no longer awaiting confirmation");
+    }
+
+    if (checkout.cartVersion !== currentCartVersion) {
+        throw new Error("Checkout is stale because the cart has changed");
     }
 
     checkout.status = "confirmed";

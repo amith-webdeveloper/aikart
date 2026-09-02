@@ -7,6 +7,7 @@ function createSession(sessionId) {
         lastSearchResults: [],
         selectedProductId: null,
         cart: [],
+        cartVersion: 0,
         checkout: null,
     };
 }
