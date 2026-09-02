@@ -784,13 +784,18 @@ app.post("/api/payment/create", async (req, res) => {
     });
   }
 
-  if (
-    session.payment &&
-    session.payment.status === "created"
-  ) {
-    return res.status(400).json({
-      error: "An active payment already exists",
-    });
+  if (session.payment) {
+    if (session.payment.status === "created") {
+      return res.status(400).json({
+        error: "An active payment already exists",
+      });
+    }
+
+    if (session.payment.status === "paid") {
+      return res.status(400).json({
+        error: "Payment has already been completed",
+      });
+    }
   }
 
   if (session.checkout.status !== "confirmed") {

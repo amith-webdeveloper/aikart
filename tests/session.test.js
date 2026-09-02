@@ -444,6 +444,48 @@ test("paid payment cannot transition again", () => {
     );
 });
 
+test("failed payment cannot transition again", () => {
+    const payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    transitionPayment(payment, "failed");
+
+    assert.throws(
+        () => transitionPayment(payment, "paid"),
+        /Invalid payment transition/
+    );
+});
+
+test("cancelled payment cannot transition again", () => {
+    const payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    transitionPayment(payment, "cancelled");
+
+    assert.throws(
+        () => transitionPayment(payment, "paid"),
+        /Invalid payment transition/
+    );
+});
+
+test("failed payment cannot be cancelled", () => {
+    const payment = createPaymentState({
+        id: "order_test_123",
+        amount: 10000,
+    });
+
+    transitionPayment(payment, "failed");
+
+    assert.throws(
+        () => transitionPayment(payment, "cancelled"),
+        /Invalid payment transition/
+    );
+});
+
 test("valid Razorpay payment signature is accepted", () => {
     const orderId = "order_test_123";
     const paymentId = "pay_test_123";
@@ -1072,6 +1114,101 @@ test("payment creation rejects an existing active payment", async () => {
         );
     } finally {
         server.close();
+    }
+});
+
+test("payment creation rejects an already paid payment", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-create-paid"
+    );
+
+    session.checkout = {
+        status: "confirmed",
+        items: [
+            {
+                productId: "prod_1",
+                name: "Test Product",
+                quantity: 1,
+                unitPrice: 100,
+                subtotal: 100,
+            },
+        ],
+        total: 100,
+        cartVersion: 0,
+    };
+
+    session.payment = {
+        status: "paid",
+        razorpayOrderId: "order_paid_123",
+        amount: 10000,
+    };
+
+    const originalCreate =
+        razorpay.orders.create;
+
+    let orderCreationAttempted = false;
+
+    razorpay.orders.create = async () => {
+        orderCreationAttempted = true;
+
+        return {
+            id: "order_should_not_exist",
+            amount: 10000,
+            currency: "INR",
+            status: "created",
+        };
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const response = await fetch(
+            `${baseUrl}/api/payment/create`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    sessionId: "payment-create-paid",
+                }),
+            }
+        );
+
+        assert.equal(response.status, 400);
+
+        const body = await response.json();
+
+        assert.deepEqual(
+            body,
+            {
+                error: "Payment has already been completed",
+            }
+        );
+
+        assert.equal(
+            orderCreationAttempted,
+            false
+        );
+
+        assert.deepEqual(
+            session.payment,
+            {
+                status: "paid",
+                razorpayOrderId: "order_paid_123",
+                amount: 10000,
+            }
+        );
+    } finally {
+        server.close();
+
+        razorpay.orders.create =
+            originalCreate;
     }
 });
 
