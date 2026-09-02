@@ -12,7 +12,9 @@
   "type": "commonjs",
   "dependencies": {
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "razorpay": "^2.9.8",
     "string-similarity": "^4.0.4",
     "zod": "^4.5.4"
   }
