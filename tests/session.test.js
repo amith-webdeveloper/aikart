@@ -1047,9 +1047,11 @@ test("payment creation creates a Razorpay order for a confirmed checkout", async
     }
 });
 
-test("payment creation rejects an existing active payment", async () => {
+test("payment creation returns the existing payment for a duplicate request", async () => {
+    clearSessions();
+
     const session = getOrCreateSession(
-        "payment-create-existing"
+        "payment-idempotency-created"
     );
 
     session.checkout = {
@@ -1073,6 +1075,22 @@ test("payment creation rejects an existing active payment", async () => {
         amount: 10000,
     };
 
+    const originalCreate =
+        razorpay.orders.create;
+
+    let orderCreationAttempted = false;
+
+    razorpay.orders.create = async () => {
+        orderCreationAttempted = true;
+
+        return {
+            id: "order_should_not_exist",
+            amount: 10000,
+            currency: "INR",
+            status: "created",
+        };
+    };
+
     const {
         server,
         baseUrl,
@@ -1087,33 +1105,149 @@ test("payment creation rejects an existing active payment", async () => {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    sessionId: "payment-create-existing",
+                    sessionId:
+                        "payment-idempotency-created",
                 }),
             }
         );
 
-        assert.equal(response.status, 400);
+        assert.equal(response.status, 200);
 
         const body = await response.json();
 
         assert.deepEqual(
             body,
             {
-                error:
-                    "An active payment already exists",
+                success: true,
+                payment: {
+                    status: "created",
+                    razorpayOrderId:
+                        "order_existing_123",
+                    amount: 10000,
+                },
             }
+        );
+
+        assert.equal(
+            orderCreationAttempted,
+            false
         );
 
         assert.deepEqual(
             session.payment,
             {
                 status: "created",
-                razorpayOrderId: "order_existing_123",
+                razorpayOrderId:
+                    "order_existing_123",
                 amount: 10000,
             }
         );
     } finally {
         server.close();
+
+        razorpay.orders.create =
+            originalCreate;
+    }
+});
+
+test("repeated payment creation requests reuse the same payment", async () => {
+    clearSessions();
+
+    const session = getOrCreateSession(
+        "payment-idempotency-sequence"
+    );
+
+    session.checkout = {
+        status: "confirmed",
+        items: [
+            {
+                productId: "prod_1",
+                name: "Test Product",
+                quantity: 1,
+                unitPrice: 100,
+                subtotal: 100,
+            },
+        ],
+        total: 100,
+        cartVersion: 0,
+    };
+
+    const originalCreate =
+        razorpay.orders.create;
+
+    let orderCreationCount = 0;
+
+    razorpay.orders.create = async () => {
+        orderCreationCount += 1;
+
+        return {
+            id: "order_idempotent_123",
+            amount: 10000,
+            currency: "INR",
+            status: "created",
+        };
+    };
+
+    const {
+        server,
+        baseUrl,
+    } = await startTestServer();
+
+    try {
+        const request = () =>
+            fetch(
+                `${baseUrl}/api/payment/create`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        sessionId:
+                            "payment-idempotency-sequence",
+                    }),
+                }
+            );
+
+        const firstResponse = await request();
+
+        assert.equal(
+            firstResponse.status,
+            200
+        );
+
+        const firstBody =
+            await firstResponse.json();
+
+        const secondResponse = await request();
+
+        assert.equal(
+            secondResponse.status,
+            200
+        );
+
+        const secondBody =
+            await secondResponse.json();
+
+        assert.deepEqual(
+            secondBody.payment,
+            firstBody.payment
+        );
+
+        assert.equal(
+            orderCreationCount,
+            1
+        );
+
+        assert.deepEqual(
+            session.payment,
+            firstBody.payment
+        );
+    } finally {
+        server.close();
+
+        razorpay.orders.create =
+            originalCreate;
     }
 });
 

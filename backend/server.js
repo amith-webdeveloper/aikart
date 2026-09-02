@@ -786,8 +786,9 @@ app.post("/api/payment/create", async (req, res) => {
 
   if (session.payment) {
     if (session.payment.status === "created") {
-      return res.status(400).json({
-        error: "An active payment already exists",
+      return res.status(200).json({
+        success: true,
+        payment: session.payment,
       });
     }
 
