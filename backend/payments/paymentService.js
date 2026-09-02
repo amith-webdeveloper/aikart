@@ -117,10 +117,21 @@ async function verifyPaymentForSession(
         throw new Error("Payment has not been captured");
     }
 
-    return transitionPayment(
+    const paidPayment = transitionPayment(
         payment,
         "paid"
     );
+
+    recordAuditEvent(
+        session,
+        "payment.paid",
+        {
+            amount: paidPayment.amount,
+            razorpayOrderId: paidPayment.razorpayOrderId,
+        }
+    );
+
+    return paidPayment;
 }
 
 module.exports = {

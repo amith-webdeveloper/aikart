@@ -602,6 +602,7 @@ test("valid payment verification marks session payment as paid", async () => {
             id: "order_test_123",
             amount: 10000,
         }),
+        auditLog: [],
     };
 
     const paymentId = "pay_test_123";
@@ -629,6 +630,21 @@ test("valid payment verification marks session payment as paid", async () => {
 
     assert.equal(result.status, "paid");
     assert.equal(session.payment.status, "paid");
+    const paidEvents =
+        session.auditLog.filter(
+            (event) =>
+                event.type === "payment.paid"
+        );
+
+    assert.equal(paidEvents.length, 1);
+    assert.equal(
+        paidEvents[0].amount,
+        10000
+    );
+    assert.equal(
+        paidEvents[0].razorpayOrderId,
+        "order_test_123"
+    );
 });
 
 test("payment verification rejects a payment belonging to a different order", async () => {
