@@ -2106,6 +2106,7 @@ ${JSON.stringify(
 
         return res.json({
           message: finalAnswer,
+          products: formatProductsForClient(latestSearchResults),
         });
       }
       // EXECUTE TOOL CALLS
@@ -2388,7 +2389,7 @@ ${JSON.stringify(
           const productName = toolArguments.productName || "";
 
           const isRecommendationRequest =
-            /\b(need|want|looking for|suggest|recommend|recommendation|something|option|options|which|best|cheapest)\b/i.test(
+            /\b(need|want|looking for|show|display|see|browse|suggest|recommend|recommendation|something|option|options|which|best|cheapest)\b/i.test(
               userMessage
             ) &&
             /\b(laptop|phone|monitor|accessory|audio|product|development|budget|under|around|below)\b/i.test(
@@ -2428,6 +2429,10 @@ ${JSON.stringify(
             );
 
             toolResult = searchProducts(safeSearchArguments);
+
+            latestSearchResults = Array.isArray(toolResult)
+              ? toolResult
+              : null;
           } else {
             toolResult = resolveProduct(toolArguments);
           }

@@ -1,4 +1,4 @@
-function ChatMessage({ role, content }) {
+function ChatMessage({ role, content, products = [] }) {
   const isUser = role === "user";
 
   return (
@@ -10,6 +10,37 @@ function ChatMessage({ role, content }) {
       <div className="message-content">
         {content}
       </div>
+      {!isUser && products.length > 0 && (
+        <div className="product-list">
+          {products.map((product) => (
+            <article className="product-card" key={product.name}>
+              <div className="product-image-placeholder">
+                No image
+              </div>
+
+              <div className="product-card-content">
+                <h3>{product.name}</h3>
+
+                <p className="product-category">
+                  {product.category}
+                </p>
+
+                <p className="product-price">
+                  ₹{product.price.toLocaleString("en-IN")}
+                </p>
+
+                <p className="product-rating">
+                  ★ {product.rating}
+                </p>
+
+                <p className="product-description">
+                  {product.description}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

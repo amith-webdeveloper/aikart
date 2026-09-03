@@ -69,6 +69,7 @@ function App() {
               key={index}
               role={item.role}
               content={item.content}
+              products={item.products}
             />
           ))}
         </div>

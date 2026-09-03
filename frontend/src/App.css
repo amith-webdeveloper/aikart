@@ -175,3 +175,16 @@
 .assistant-message .message-content {
   background: transparent;
 }
+
+.product-list {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.product-card {
+  width: 220px;
+  border: 1px solid var(--border);
+  padding: 16px;
+  background: var(--surface);
+}
