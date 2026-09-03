@@ -1,39 +1,89 @@
 import { useState } from "react";
 import { sendChatMessage } from "./api/apiClient";
 import { getSessionId } from "./session/session";
+import "./App.css";
 
 function App() {
   const [sessionId] = useState(() => getSessionId());
   const [message, setMessage] = useState("");
-  const [response, setResponse] = useState("");
-
+  const [messages, setMessages] = useState([]);
   async function sendMessage() {
     if (message.trim() === "") {
       return;
     }
 
+    const userMessage = message.trim();
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        role: "user",
+        content: userMessage,
+      },
+    ]);
+
+    setMessage("");
+
     const data = await sendChatMessage(
       sessionId,
-      message
+      userMessage
     );
 
-    setResponse(data.message);
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        role: "assistant",
+        content: data.message,
+      },
+    ]);
   }
   return (
-    <div>
-      <h1>AIKart</h1>
+    <div className="app">
+      <aside className="sidebar">
+        <div className="brand">
+          <h1>AIKart</h1>
+          <p>Your AI Shopping Assistant</p>
+        </div>
 
-      <input
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Ask AIKart something..."
-      />
+        <nav className="sidebar-nav">
+          <button>Order tracking</button>
+          <button>Tailored suggestions</button>
+          <button>Answers & questions</button>
+          <button>Private & secure</button>
+          <button>Cost savings</button>
+        </nav>
 
-      <button onClick={sendMessage}>
-        Send
-      </button>
+        <button className="logout-button">Logout</button>
+      </aside>
 
-      <p>{response}</p>
+      <main className="chat">
+        <header className="chat-header">
+          <h2>Chat</h2>
+        </header>
+
+        <div className="messages">
+          {messages.map((item, index) => (
+            <p key={index}>
+              <strong>
+                {item.role === "user" ? "You" : "AIKart"}:
+              </strong>{" "}
+              {item.content}
+            </p>
+          ))}
+        </div>
+
+        <form className="composer">
+          <input
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Ask AIKart anything..."
+          />
+
+          <button type="button" onClick={sendMessage}>
+            Send
+          </button>
+        </form>
+      </main>
     </div>
   );
 }
