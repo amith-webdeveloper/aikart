@@ -131,3 +131,47 @@
 .composer button:hover {
   background: var(--accent-hover);
 }
+
+.chat-message {
+  margin-bottom: 24px;
+}
+
+.message-label {
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.message-content {
+  max-width: 720px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.user-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.user-message .message-content {
+  background: var(--surface);
+}
+
+.assistant-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.assistant-message .message-label {
+  color: var(--accent);
+}
+
+.assistant-message .message-content {
+  background: transparent;
+}
