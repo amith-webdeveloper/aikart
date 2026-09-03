@@ -14,8 +14,11 @@ function ChatMessage({ role, content, products = [] }) {
         <div className="product-list">
           {products.map((product) => (
             <article className="product-card" key={product.name}>
-              <div className="product-image-placeholder">
-                No image
+              <div className="product-image">
+                <img
+                  src={product.image}
+                  alt={product.name}
+                />
               </div>
 
               <div className="product-card-content">
