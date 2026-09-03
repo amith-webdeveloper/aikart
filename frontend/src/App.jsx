@@ -2,6 +2,7 @@ import { useState } from "react";
 import { sendChatMessage } from "./api/apiClient";
 import { getSessionId } from "./session/session";
 import "./App.css";
+import ChatMessage from "./components/ChatMessage";
 
 function App() {
   const [sessionId] = useState(() => getSessionId());
@@ -34,6 +35,7 @@ function App() {
       {
         role: "assistant",
         content: data.message,
+        products: data.products || [],
       },
     ]);
   }
@@ -63,12 +65,11 @@ function App() {
 
         <div className="messages">
           {messages.map((item, index) => (
-            <p key={index}>
-              <strong>
-                {item.role === "user" ? "You" : "AIKart"}:
-              </strong>{" "}
-              {item.content}
-            </p>
+            <ChatMessage
+              key={index}
+              role={item.role}
+              content={item.content}
+            />
           ))}
         </div>
 

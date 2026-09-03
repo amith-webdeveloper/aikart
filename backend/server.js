@@ -722,6 +722,9 @@ function sendChatResponse(
 
   return res.json({
     message: answer,
+    products: formatProductsForClient(
+      session.lastSearchResults
+    ),
   });
 }
 
@@ -733,6 +736,22 @@ function isCheckoutRequest(userMessage) {
   return /\b(proceed to checkout|go to checkout|checkout|check out)\b/i.test(
     userMessage
   );
+}
+
+function formatProductsForClient(productResults) {
+  if (!Array.isArray(productResults)) {
+    return [];
+  }
+
+  return productResults.map((product) => ({
+    name: product.name,
+    category: product.category,
+    price: product.price,
+    rating: product.rating,
+    stock: product.stock,
+    description: product.description,
+    specifications: product.specifications,
+  }));
 }
 
 function isCheckoutConfirmation(userMessage) {
