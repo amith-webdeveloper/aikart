@@ -1,6 +1,7 @@
 const products = [
   {
     id: "lap001",
+      image: "/products/lap001.webp",
     name: "ProBook X",
     category: "laptop",
     price: 55000,
@@ -20,6 +21,7 @@ const products = [
   },
   {
     id: "lap002",
+      image: "/products/lap002.webp",
     name: "UltraBook Y",
     category: "laptop",
     price: 45000,
@@ -40,6 +42,7 @@ const products = [
 
   {
     id: "lap003",
+      image: "/products/lap003.webp",
     name: "DevBook Z",
     category: "laptop",
     price: 65000,
@@ -60,6 +63,7 @@ const products = [
 
   {
     id: "mouse001",
+      image: "/products/mouse001.png",
     name: "Wireless Mouse",
     category: "accessory",
     price: 800,
@@ -69,6 +73,7 @@ const products = [
 
   {
     id: "ssd001",
+    image: "/products/ssd001.png",
     name: "FastSSD 1TB",
     category: "accessory",
     price: 4000,
@@ -78,6 +83,7 @@ const products = [
 
   {
     id: "bag001",
+    image: "/products/bag001.png",
     name: "Laptop Backpack",
     category: "accessory",
     price: 1800,
@@ -87,6 +93,7 @@ const products = [
 
   {
     id: "phone001",
+    image: "/products/phone001.png",
     name: "Phone X",
     category: "phone",
     price: 25000,
@@ -96,6 +103,7 @@ const products = [
 
   {
     id: "keyboard001",
+    image: "/products/keyboard001.png",
     name: "Mechanical Keyboard",
     category: "accessory",
     price: 2500,
@@ -105,6 +113,7 @@ const products = [
 
   {
     id: "monitor001",
+    image: "/products/monitor001.png",
     name: "Pro Monitor 24",
     category: "monitor",
     price: 12000,
@@ -114,6 +123,7 @@ const products = [
 
   {
     id: "headphone001",
+    image: "/products/headphone001.png",
     name: "SoundMax Headphones",
     category: "audio",
     price: 3500,

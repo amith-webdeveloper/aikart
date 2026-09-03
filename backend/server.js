@@ -745,6 +745,7 @@ function formatProductsForClient(productResults) {
 
   return productResults.map((product) => ({
     name: product.name,
+    image: product.image,
     category: product.category,
     price: product.price,
     rating: product.rating,
@@ -2433,6 +2434,9 @@ ${JSON.stringify(
             latestSearchResults = Array.isArray(toolResult)
               ? toolResult
               : null;
+            session.lastSearchResults = Array.isArray(toolResult)
+              ? toolResult
+              : [];
           } else {
             toolResult = resolveProduct(toolArguments);
           }
