@@ -1,4 +1,9 @@
-function ChatMessage({ role, content, products = [] }) {
+function ChatMessage({
+  role,
+  content,
+  products = [],
+  onProductClick,
+}) {
   const isUser = role === "user";
 
   return (
@@ -13,12 +18,20 @@ function ChatMessage({ role, content, products = [] }) {
       {!isUser && products.length > 0 && (
         <div className="product-list">
           {products.map((product) => (
-            <article className="product-card" key={product.name}>
+            <article
+              className="product-card"
+              key={product.name}
+              onClick={() => onProductClick(product)}
+            >
               <div className="product-image">
-                <img
-                  src={product.image}
-                  alt={product.name}
-                />
+                {product.image ? (
+                  <img
+                    src={product.image}
+                    alt={product.name}
+                  />
+                ) : (
+                  <span>No image</span>
+                )}
               </div>
 
               <div className="product-card-content">

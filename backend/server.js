@@ -264,6 +264,7 @@ function enforceSearchConstraints(userMessage, toolArguments) {
     { category: "phone", patterns: [/\bphone(s)?\b/i, /\bmobile(s)?\b/i] },
     { category: "monitor", patterns: [/\bmonitor(s)?\b/i, /\bscreen(s)?\b/i] },
     { category: "accessory", patterns: [/\baccessor(y|ies)\b/i] },
+    { category: "accessory", patterns: [/\bkeyboard(s)?\b/i] },
     { category: "audio", patterns: [/\baudio\b/i, /\bheadphone(s)?\b/i] },
   ];
 
@@ -1950,6 +1951,7 @@ ${JSON.stringify(
             message:
               `Here are the products from the merchant catalog:\n\n` +
               catalogLines.join("\n"),
+            products: formatProductsForClient(latestSearchResults),
           });
         }
 
@@ -2393,7 +2395,7 @@ ${JSON.stringify(
             /\b(need|want|looking for|show|display|see|browse|suggest|recommend|recommendation|something|option|options|which|best|cheapest)\b/i.test(
               userMessage
             ) &&
-            /\b(laptop|phone|monitor|accessory|audio|product|development|budget|under|around|below)\b/i.test(
+            /\b(laptop|phone|monitor|keyboard|accessory|audio|product|development|budget|under|around|below)\b/i.test(
               userMessage
             );
           const isEvaluationRequest =
