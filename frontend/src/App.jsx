@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { sendChatMessage } from "./api/apiClient";
+import { getSessionId } from "./session/session";
 
 function App() {
+  const [sessionId] = useState(() => getSessionId());
   const [message, setMessage] = useState("");
   const [response, setResponse] = useState("");
 
@@ -9,23 +12,13 @@ function App() {
       return;
     }
 
-    const response = await fetch("http://localhost:3000/api/chat", {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-      },
-
-      body: JSON.stringify({
-        message: message,
-      }),
-    });
-
-    const data = await response.json();
+    const data = await sendChatMessage(
+      sessionId,
+      message
+    );
 
     setResponse(data.message);
   }
-
   return (
     <div>
       <h1>AIKart</h1>
