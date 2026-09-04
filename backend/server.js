@@ -53,7 +53,7 @@ const tools = [
       name: "searchProducts",
 
       description:
-        "Search the merchant product catalog using only the filters explicitly provided by the customer. If the customer does not specify a category, do not invent one; omit the category parameter. If the customer only specifies a maximum price, search all product categories.",
+        "Search the merchant catalog using the customer's requested product or product type and any explicit structured filters. Use query for what the customer wants, category only when a catalog category is explicitly relevant, and maxPrice for an explicit price limit. Do not invent product details.",
 
       parameters: {
         type: "object",
@@ -67,6 +67,11 @@ const tools = [
           maxPrice: {
             type: "number",
             description: "Optional maximum price in Indian Rupees. Use this when the customer specifies a budget or maximum price.",
+          },
+          query: {
+            type: "string",
+            description:
+              "The product, product type, feature, or item the customer is looking for. Use the customer's actual product-related words. Examples: keyboard, mouse, SSD, headphones, mechanical keyboard.",
           },
         },
 
@@ -2151,7 +2156,50 @@ ${JSON.stringify(
             safeSearchArguments
           );
 
-          toolResult = searchProducts(safeSearchArguments);
+          const searchArguments = {
+            ...safeSearchArguments,
+          };
+
+          const isMostStorageSearch =
+            /\b(most|maximum|highest|largest)\b/i.test(userMessage) &&
+            /\b(storage|space)\b/i.test(userMessage);
+
+          const queryMatchesCatalogCategory =
+            typeof searchArguments.query === "string" &&
+            typeof searchArguments.category === "string" &&
+            products.some((product) => {
+              const query = searchArguments.query
+                .trim()
+                .toLowerCase();
+
+              const category = String(product.category || "")
+                .trim()
+                .toLowerCase();
+
+              return (
+                category === query ||
+                category === query.replace(/ies$/, "y") ||
+                category === query.replace(/s$/, "")
+              );
+            }) &&
+            products.some((product) => {
+              const category = String(product.category || "")
+                .trim()
+                .toLowerCase();
+
+              return category ===
+                searchArguments.category
+                  .trim()
+                  .toLowerCase();
+            });
+
+          if (
+            queryMatchesCatalogCategory ||
+            isMostStorageSearch
+          ) {
+            delete searchArguments.query;
+          }
+          toolResult = searchProducts(searchArguments);
 
           // Preserve the exact merchant catalog results.
           // The final AI response must not rename or omit products.
