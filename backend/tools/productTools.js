@@ -2,16 +2,130 @@ const products = require("../data/products");
 const defaultCart = require("../data/cart");
 const stringSimilarity = require("string-similarity");
 
-function searchProducts({ category, maxPrice }) {
-    const results = products.filter((product) => {
-        const categoryMatches =
-            !category || product.category === category;
+function searchProducts({ query, category, maxPrice }) {
+    let results = products;
 
-        const priceMatches =
-            !maxPrice || product.price <= maxPrice;
+    if (category) {
+        results = results.filter(
+            (product) => product.category === category
+        );
+    }
 
-        return categoryMatches && priceMatches;
-    });
+    if (maxPrice) {
+        results = results.filter(
+            (product) => product.price <= maxPrice
+        );
+    }
+
+    if (query && typeof query === "string") {
+        const normalizedQuery = query
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, " ");
+
+        if (normalizedQuery) {
+            const catalogCategories = [
+                ...new Set(
+                    products.map((product) =>
+                        product.category.toLowerCase().trim()
+                    )
+                ),
+            ];
+
+            const normalizedCategory = catalogCategories.find(
+                (catalogCategory) =>
+                    catalogCategory === normalizedQuery ||
+                    `${catalogCategory}s` === normalizedQuery
+            );
+
+            if (normalizedCategory) {
+                results = results.filter(
+                    (product) =>
+                        product.category.toLowerCase().trim() ===
+                        normalizedCategory
+                );
+            } else {
+                const queryTokens = normalizedQuery
+                    .split(/\s+/)
+                    .filter(Boolean);
+
+                const rankedResults = results
+                    .map((product) => {
+                        const nameText = (product.name || "").toLowerCase();
+                        const categoryText = (product.category || "").toLowerCase();
+
+                        const secondaryText = [
+                            product.description,
+                            product.brand,
+                        ]
+                            .filter(Boolean)
+                            .join(" ")
+                            .toLowerCase();
+
+                        const specificationText = Object.values(
+                            product.specifications || {}
+                        )
+                            .filter(Boolean)
+                            .join(" ")
+                            .toLowerCase();
+
+                        const matchesName = queryTokens.every((token) =>
+                            nameText.includes(token)
+                        );
+
+                        const matchesCategory = queryTokens.every((token) =>
+                            categoryText.includes(token)
+                        );
+
+                        const matchesSecondary = queryTokens.every((token) =>
+                            secondaryText.includes(token)
+                        );
+
+                        const matchesSpecifications = queryTokens.every((token) =>
+                            specificationText.includes(token)
+                        );
+
+                        if (
+                            !matchesName &&
+                            !matchesCategory &&
+                            !matchesSecondary &&
+                            !matchesSpecifications
+                        ) {
+                            return null;
+                        }
+
+                        let score = 0;
+
+                        if (matchesName) {
+                            score += 4;
+                        }
+
+                        if (matchesCategory) {
+                            score += 3;
+                        }
+
+                        if (matchesSecondary) {
+                            score += 2;
+                        }
+
+                        if (matchesSpecifications) {
+                            score += 1;
+                        }
+
+                        return {
+                            product,
+                            score,
+                        };
+                    })
+                    .filter(Boolean)
+                    .sort((a, b) => b.score - a.score);
+
+                results = rankedResults.map(
+                    ({ product }) => product
+                );
+            }
+        }
+    }
 
     return results;
 }
