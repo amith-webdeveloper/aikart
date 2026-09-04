@@ -52,6 +52,26 @@ Backend Cart
 Cart Contents + Total
 ```
 
+## Product Demo
+
+### 1. Conversational Product Discovery
+
+AIKart can interpret a natural-language request such as "show me laptops" and return relevant catalog products as interactive product cards.
+
+![AIKart product discovery](docs/screenshots/product-discovery.png)
+
+### 2. Product Details
+
+Selecting a product opens a dedicated product details view with price, rating, stock, specifications, and an Add to Cart action.
+
+![AIKart product details](docs/screenshots/product-details.png)
+
+### 3. Conversational Cart
+
+After adding a product, the customer can ask AIKart to show the current cart. Cart contents, subtotals, and the total are returned from backend-controlled cart state.
+
+![AIKart cart](docs/screenshots/cart.png)
+
 ## Architecture
 
 ```text
