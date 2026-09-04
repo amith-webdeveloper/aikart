@@ -393,3 +393,10 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.cart-message {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}

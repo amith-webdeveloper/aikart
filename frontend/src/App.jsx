@@ -9,6 +9,35 @@ function App() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [cart, setCart] = useState([]);
+  const [cartMessage, setCartMessage] = useState("");
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
+
+  async function addSelectedProductToCart() {
+    if (!selectedProduct || isAddingToCart) {
+      return;
+    }
+
+    setIsAddingToCart(true);
+    setCartMessage("");
+
+    try {
+      const data = await sendChatMessage(
+        sessionId,
+        `Add 1 ${selectedProduct.name} to my cart.`
+      );
+
+      setCart(data.cart || []);
+      setCartMessage(data.message);
+    } catch (error) {
+      setCartMessage(
+        error.message || "Unable to add the product to your cart."
+      );
+    } finally {
+      setIsAddingToCart(false);
+    }
+  }
+
   async function sendMessage() {
     if (message.trim() === "") {
       return;
@@ -30,6 +59,7 @@ function App() {
       sessionId,
       userMessage
     );
+    setCart(data.cart || []);
 
     setMessages((currentMessages) => [
       ...currentMessages,
@@ -106,10 +136,19 @@ function App() {
 
             <button
               className="add-to-cart-button"
-              disabled={selectedProduct.stock <= 0}
+              disabled={
+                selectedProduct.stock <= 0 ||
+                isAddingToCart
+              }
+              onClick={addSelectedProductToCart}
             >
-              Add to Cart
+              {isAddingToCart ? "Adding..." : "Add to Cart"}
             </button>
+            {cartMessage && (
+              <p className="cart-message">
+                {cartMessage}
+              </p>
+            )}
           </div>
         </div>
       </main>

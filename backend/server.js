@@ -731,6 +731,7 @@ function sendChatResponse(
     products: formatProductsForClient(
       session.lastSearchResults
     ),
+    cart: getCart(session.cart),
   });
 }
 
